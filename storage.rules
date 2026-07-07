@@ -1,0 +1,78 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userPath() {
+      return /databases/(default)/documents/users/$(request.auth.uid);
+    }
+
+    function hasUserProfile() {
+      return signedIn() && firestore.exists(userPath());
+    }
+
+    function currentUser() {
+      return firestore.get(userPath()).data;
+    }
+
+    function activeUser() {
+      return hasUserProfile() && currentUser().isActive == true;
+    }
+
+    function isAdmin() {
+      return activeUser()
+        && currentUser().platformRole in ['admin', 'super_admin'];
+    }
+
+    function hasAnyRole(roles) {
+      return activeUser() && currentUser().platformRole in roles;
+    }
+
+    function hasBranchAccess(branchId) {
+      return isAdmin()
+        || (activeUser() && branchId in currentUser().assignedBranchIds);
+    }
+
+    function proofIntentPath(paymentId) {
+      return /databases/(default)/documents/paymentProofUploadIntents/$(paymentId);
+    }
+
+    function proofIntent(paymentId) {
+      return firestore.get(proofIntentPath(paymentId)).data;
+    }
+
+    match /payment-proofs/{branchId}/{orderId}/{paymentId}/{fileName} {
+      allow read: if hasBranchAccess(branchId)
+        && hasAnyRole([
+          'cashier',
+          'release_verifier',
+          'branch_manager',
+          'admin',
+          'super_admin'
+        ]);
+      allow write: if hasBranchAccess(branchId)
+        && hasAnyRole(['cashier', 'branch_manager', 'admin', 'super_admin'])
+        && resource == null
+        && firestore.exists(proofIntentPath(paymentId))
+        && proofIntent(paymentId).branchId == branchId
+        && proofIntent(paymentId).orderId == orderId
+        && proofIntent(paymentId).storagePath == request.resource.name
+        && proofIntent(paymentId).createdBy == request.auth.uid
+        && proofIntent(paymentId).consumed == false
+        && proofIntent(paymentId).contentType == request.resource.contentType
+        && proofIntent(paymentId).sizeBytes == request.resource.size
+        && request.resource.metadata.paymentProofUploadIntentId == paymentId
+        && request.resource.metadata.branchId == branchId
+        && request.resource.metadata.orderId == orderId
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp)|application/pdf');
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

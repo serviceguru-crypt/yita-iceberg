@@ -1,0 +1,7 @@
+{
+  "projects": {
+    "default": "yita-iceberg-dev",
+    "staging": "yita-iceberg-staging",
+    "production": "yita-iceberg-production"
+  }
+}

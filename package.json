@@ -1,0 +1,53 @@
+{
+  "name": "yita-iceberg",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "dev:emulators": "firebase emulators:start",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "functions:build": "npm --prefix functions run build",
+    "functions:lint": "npm --prefix functions run lint",
+    "functions:test": "firebase emulators:exec --only auth,firestore,storage \"npm --prefix functions run test\"",
+    "functions:typecheck": "npm --prefix functions run typecheck",
+    "rules:test": "firebase emulators:exec --only firestore,storage \"vitest run tests/rules\"",
+    "bootstrap:super-admin": "tsx scripts/bootstrap-super-admin.ts",
+    "seed:test-users": "tsx scripts/create-test-users.ts",
+    "deploy": "firebase deploy"
+  },
+  "dependencies": {
+    "@tabler/icons-react": "^3.44.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "firebase": "^12.15.0",
+    "firebase-admin": "^13.10.0",
+    "next": "16.2.10",
+    "qrcode": "^1.5.4",
+    "radix-ui": "^1.6.1",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "server-only": "^0.0.1",
+    "shadcn": "^4.13.0",
+    "tailwind-merge": "^3.6.0",
+    "tw-animate-css": "^1.4.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.1",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.10",
+    "firebase-tools": "^15.22.4",
+    "tailwindcss": "^4",
+    "tsx": "^4.23.0",
+    "typescript": "^5",
+    "vitest": "^4.1.10"
+  }
+}

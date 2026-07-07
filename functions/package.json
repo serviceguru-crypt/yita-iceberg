@@ -1,0 +1,31 @@
+{
+  "name": "yita-iceberg-functions",
+  "version": "0.1.0",
+  "private": true,
+  "main": "lib/index.js",
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint \"src/**/*.ts\"",
+    "test": "vitest run --fileParallelism=false",
+    "typecheck": "tsc --noEmit",
+    "serve": "npm run build && firebase emulators:start --only functions",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.10.0",
+    "firebase-functions": "^7.1.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "@types/node": "^20.19.27",
+    "eslint": "^9.39.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.50.0",
+    "vitest": "^4.1.10"
+  }
+}
