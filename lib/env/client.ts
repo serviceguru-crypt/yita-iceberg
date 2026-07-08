@@ -8,12 +8,14 @@ const firebaseClientEnvSchema = z.object({
   messagingSenderId: z.string().min(1),
   appId: z.string().min(1),
   measurementId: z.string().optional(),
+  appCheckSiteKey: z.string().optional(),
 });
 
 const clientRuntimeEnvSchema = z.object({
   useFirebaseEmulators: z.boolean(),
   enableAppCheck: z.boolean(),
   appCheckDebugToken: z.string().optional(),
+  defaultFunctionRegion: z.string().min(1),
 });
 
 function readBoolean(value: string | undefined) {
@@ -29,6 +31,7 @@ export function getFirebaseClientEnv() {
     messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
     appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
     measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
+    appCheckSiteKey: process.env.NEXT_PUBLIC_FIREBASE_APP_CHECK_SITE_KEY,
   });
 }
 
@@ -39,5 +42,9 @@ export function getClientRuntimeEnv() {
     ),
     enableAppCheck: readBoolean(process.env.NEXT_PUBLIC_ENABLE_APP_CHECK),
     appCheckDebugToken: process.env.NEXT_PUBLIC_APP_CHECK_DEBUG_TOKEN,
+    defaultFunctionRegion:
+      process.env.NEXT_PUBLIC_DEFAULT_FUNCTION_REGION ||
+      process.env.DEFAULT_FUNCTION_REGION ||
+      "us-central1",
   });
 }

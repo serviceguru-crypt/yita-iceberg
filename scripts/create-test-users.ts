@@ -2,6 +2,8 @@ import { getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
+import { assertProductionGuardFromEnv } from "./shared/confirm-production";
+
 function initializeAdmin() {
   if (getApps().length === 0) {
     initializeApp({
@@ -30,6 +32,11 @@ async function ensureAuthUser(uid: string, email: string, displayName: string) {
 }
 
 async function main() {
+  assertProductionGuardFromEnv({
+    confirmationEnv: "SEED_PRODUCTION_CONFIRMATION",
+    allowEnv: "SEED_ALLOW_PRODUCTION",
+    requiredConfirmation: "SEED_TEST_USERS_IN_PRODUCTION",
+  });
   initializeAdmin();
 
   const db = getFirestore();

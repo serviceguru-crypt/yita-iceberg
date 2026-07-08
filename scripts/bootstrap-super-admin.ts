@@ -5,6 +5,8 @@ import { getAuth } from "firebase-admin/auth";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { z } from "zod";
 
+import { assertProductionGuardFromEnv } from "./shared/confirm-production";
+
 const envSchema = z.object({
   BOOTSTRAP_SUPER_ADMIN_EMAIL: z.string().email(),
   BOOTSTRAP_SUPER_ADMIN_NAME: z.string().min(1),
@@ -56,6 +58,11 @@ function initializeAdmin() {
 async function main() {
   const env = envSchema.parse(process.env);
   const emergencyOverride = env.BOOTSTRAP_EMERGENCY_OVERRIDE === "true";
+  assertProductionGuardFromEnv({
+    confirmationEnv: "BOOTSTRAP_PRODUCTION_CONFIRMATION",
+    allowEnv: "BOOTSTRAP_ALLOW_PRODUCTION",
+    requiredConfirmation: "BOOTSTRAP_SUPER_ADMIN_IN_PRODUCTION",
+  });
 
   initializeAdmin();
 

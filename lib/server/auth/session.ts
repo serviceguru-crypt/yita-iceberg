@@ -4,10 +4,12 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { adminAuth, adminDb } from "@/lib/server/firebase-admin";
+import { getServerEnv } from "@/lib/env/server";
 import { userProfileSchema, type UserProfile } from "@/lib/validation/user";
 
-export const sessionCookieName = "__session";
-const sessionDurationMs = 5 * 24 * 60 * 60 * 1000;
+export const sessionCookieName = getServerEnv().sessionCookieName;
+const sessionDurationMs =
+  getServerEnv().sessionCookieMaxAgeDays * 24 * 60 * 60 * 1000;
 
 export async function createSessionCookie(idToken: string) {
   return adminAuth().createSessionCookie(idToken, {

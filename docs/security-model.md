@@ -206,6 +206,14 @@ Inventory cost, valuation, protected prices, raw payment-proof paths, raw QR tok
 
 CSV exports are generated from the same callable-enforced report data and are limited to 31 days. Phase 8 returns CSV content directly to the browser and does not create public Storage objects. Firestore `reportExports` metadata and Storage `report-exports/**` are private/denied to clients by default.
 
+## Production Hardening
+
+Phase 9 adds App Check readiness without breaking local emulators. Browser App Check initialization is controlled by `NEXT_PUBLIC_ENABLE_APP_CHECK`; callable enforcement is controlled by `ENABLE_APP_CHECK_ENFORCEMENT` and is automatically disabled in emulator mode.
+
+Cloud Functions use centralized runtime options and structured logging. Logging helpers redact tokens, cookies, private keys, QR values, and proof storage paths. Unhandled callable errors return safe messages with an error reference instead of stack traces.
+
+Production scripts use explicit guards before dangerous actions. Production bootstrap, migrations, seeds, and smoke tests require confirmation phrases documented in the runbooks.
+
 ## Environment and Secret Handling
 
 Public Firebase web config values may be exposed through `NEXT_PUBLIC_` variables. Server credentials, Admin SDK configuration, payment secrets, private keys, and production environment values must never be shipped in frontend bundles or committed to source control.

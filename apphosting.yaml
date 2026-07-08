@@ -1,0 +1,29 @@
+runConfig:
+  runtime: nodejs20
+  cpu: 1
+  memoryMiB: 1024
+  minInstances: 0
+  maxInstances: 10
+
+env:
+  - variable: APP_ENV
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: APP_BASE_URL
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: FIREBASE_PROJECT_ID
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: FIREBASE_STORAGE_BUCKET
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: DEFAULT_FUNCTION_REGION
+    value: us-central1
+    availability:
+      - BUILD
+      - RUNTIME

@@ -17,6 +17,17 @@
     "bootstrap:super-admin": "tsx scripts/bootstrap-super-admin.ts",
     "seed:test-users": "tsx scripts/create-test-users.ts",
     "migrate:phase6": "tsx scripts/migrate-phase6-sensitive-fields.ts",
+    "smoke:test": "tsx scripts/smoke-test.ts",
+    "firebase:use:staging": "firebase use staging",
+    "firebase:use:production": "firebase use production",
+    "deploy:rules:staging": "firebase deploy --only firestore:rules,storage --project staging",
+    "deploy:indexes:staging": "firebase deploy --only firestore:indexes --project staging",
+    "deploy:functions:staging": "firebase deploy --only functions --project staging",
+    "deploy:staging": "firebase deploy --project staging",
+    "deploy:rules:production": "firebase deploy --only firestore:rules,storage --project production",
+    "deploy:indexes:production": "firebase deploy --only firestore:indexes --project production",
+    "deploy:functions:production": "firebase deploy --only functions --project production",
+    "deploy:production": "firebase deploy --project production",
     "deploy": "firebase deploy"
   },
   "dependencies": {

@@ -2,6 +2,8 @@ import { applicationDefault, cert, getApps, initializeApp } from "firebase-admin
 import { FieldValue, getFirestore, type WriteBatch } from "firebase-admin/firestore";
 import { z } from "zod";
 
+import { assertProductionGuardFromEnv } from "./shared/confirm-production";
+
 const envSchema = z.object({
   PHASE6_MIGRATION_CONFIRM: z.literal("true"),
   PHASE6_ALLOW_PRODUCTION: z.string().optional(),
@@ -11,6 +13,7 @@ const envSchema = z.object({
   FIREBASE_CLIENT_EMAIL: z.string().optional(),
   FIREBASE_PRIVATE_KEY: z.string().optional(),
   FIREBASE_SERVICE_ACCOUNT_JSON: z.string().optional(),
+  PHASE6_MIGRATION_DRY_RUN: z.string().optional(),
 });
 
 function initializeAdmin() {
@@ -55,9 +58,15 @@ async function commit(batch: WriteBatch, writes: number) {
 
 async function main() {
   const env = envSchema.parse(process.env);
+  const dryRun = env.PHASE6_MIGRATION_DRY_RUN === "true" || process.argv.includes("--dry-run");
   if (!env.FIRESTORE_EMULATOR_HOST && env.PHASE6_ALLOW_PRODUCTION !== "true") {
     throw new Error("Refusing to migrate production without PHASE6_ALLOW_PRODUCTION=true.");
   }
+  assertProductionGuardFromEnv({
+    confirmationEnv: "PHASE6_PRODUCTION_CONFIRMATION",
+    allowEnv: "PHASE6_ALLOW_PRODUCTION",
+    requiredConfirmation: "RUN_PHASE6_MIGRATION_IN_PRODUCTION",
+  });
 
   initializeAdmin();
   const db = getFirestore();
@@ -134,15 +143,15 @@ async function main() {
       writes += 4;
       migrated += 1;
       if (writes >= 400) {
-        await commit(batch, writes);
+        if (!dryRun) await commit(batch, writes);
         batch = db.batch();
         writes = 0;
       }
     }
   }
 
-  await commit(batch, writes);
-  console.log(`Phase 6 migration complete. Migrated ${migrated} branch products.`);
+  if (!dryRun) await commit(batch, writes);
+  console.log(`Phase 6 migration ${dryRun ? "dry run" : "complete"}. Planned ${migrated} branch products.`);
 }
 
 main().catch((error) => {

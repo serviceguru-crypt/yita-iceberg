@@ -177,3 +177,16 @@ Screen groups:
 - CSV export generated from the same server-authorized rows shown in the report.
 
 Current aggregation strategy is live bounded reads over indexed ledgers with hard date-range limits. The schema reserves `reportSummaries/{summaryId}` for daily/monthly branch and company summaries; client writes are denied. `rebuildReportSummaries` currently returns a manually generated summary snapshot and is reserved for later scheduled/materialized summary work without starting deployment or scheduler hardening.
+
+## Phase 9 Production Readiness Slice
+
+Phase 9 adds production separation and operations readiness:
+
+- Local, staging, and production environment examples.
+- Firebase App Hosting runtime config for the Next.js app.
+- Cloud Functions runtime options, structured logging, and App Check-ready callable options.
+- Scheduled stale-order expiry and report-summary rebuild jobs.
+- CI and manual deploy workflows.
+- Backup, monitoring, release, smoke-test, and incident runbooks.
+
+The web app deploys through Firebase App Hosting. Firestore rules, Storage rules, indexes, and Cloud Functions deploy through Firebase CLI using project aliases. Production deploys require manual approval and must not bootstrap users or run migrations automatically.

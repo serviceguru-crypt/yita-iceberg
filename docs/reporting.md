@@ -1,6 +1,6 @@
 # Reporting
 
-Phase 8 implements dashboards, reports, analytics views, and CSV exports without starting production deployment, monitoring, backup, App Check enforcement, or CI/CD hardening.
+Phase 8 implements dashboards, reports, analytics views, and CSV exports. Phase 9 adds production scheduling and operational guardrails for report summaries.
 
 ## Architecture
 
@@ -45,7 +45,7 @@ reportSummaries/monthlyBranch_{branchId}_{yyyyMM}
 reportSummaries/monthlyCompany_{yyyyMM}
 ```
 
-Source collections are `orders`, `orders/{orderId}/payments`, `financialTransactions`, `saleReversals`, `stockMovements`, `auditLogs`, and branch inventory subcollections. `rebuildReportSummaries` is a callable preview/manual rebuild surface for future materialized summaries; scheduled generation is deferred.
+Source collections are `orders`, `orders/{orderId}/payments`, `financialTransactions`, `saleReversals`, `stockMovements`, `auditLogs`, and branch inventory subcollections. `rebuildReportSummaries` is a callable manual rebuild surface. `rebuildReportSummariesScheduled` runs daily when `ENABLE_REPORT_SUMMARY_REBUILD=true` and rebuilds the previous day for active branches using bounded queries.
 
 ## Export
 
@@ -88,6 +88,6 @@ This keeps reserved-but-not-yet-released orders visible in reorder decisions.
 ## Known Limitations
 
 - Charts are not included yet; views use real summary cards and tables.
-- Report summaries are reserved but not scheduled/materialized yet.
+- Report summaries are daily only in Phase 9; monthly rollups remain reserved.
 - CSV is the only export format in Phase 8.
 - External payment-processor refund status is not available; reversal refunds are internal records.

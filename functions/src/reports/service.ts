@@ -1,8 +1,10 @@
-import { Timestamp } from "firebase-admin/firestore";
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { HttpsError } from "firebase-functions/v2/https";
 
 import { requireActor } from "../shared/auth";
 import { adminDb } from "../shared/firebase";
+import { logInfo, logWarn } from "../shared/logging";
+import { maxDetailReportDays, maxReportExportDays } from "../shared/runtime";
 import { canAccessBranch, type ActorProfile } from "../shared/roles";
 import {
   dashboardSummarySchema,
@@ -42,8 +44,7 @@ type ReportResult = {
 const managementRoles = ["branch_manager", "admin", "super_admin"];
 const adminRoles = ["admin", "super_admin"];
 const operationalRoles = ["order_registrar", "cashier", "release_verifier"];
-const detailRangeLimitDays = 93;
-const exportRangeLimitDays = 31;
+const reportQueryLimit = 500;
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -169,7 +170,7 @@ async function queryCollectionByDate(
         .where(dateField, ">=", range.start)
         .where(dateField, "<", range.end)
         .orderBy(dateField, "desc")
-        .limit(500)
+        .limit(reportQueryLimit)
         .get(),
     ),
   );
@@ -255,7 +256,7 @@ function applyOrderFilters(orders: Record<string, unknown>[], filters: Record<st
 async function salesReport(actor: ActorProfile, input: ReportInput, defaults: "today" | "month" = "month"): Promise<ReportResult> {
   ensureRole(actor, managementRoles);
   const range = parseDateRange(input, defaults);
-  if (range.days > detailRangeLimitDays) throw new HttpsError("invalid-argument", "Sales report date range is too large.");
+  if (range.days > maxDetailReportDays()) throw new HttpsError("invalid-argument", "Sales report date range is too large.");
   const scope = await resolveBranchScope(actor, input);
   const allOrders = applyOrderFilters(await queryOrders(range, scope.branchIds), input.filters);
   const completed = completedSaleOrders(allOrders);
@@ -306,7 +307,7 @@ async function salesReport(actor: ActorProfile, input: ReportInput, defaults: "t
 async function paymentReport(actor: ActorProfile, input: ReportInput): Promise<ReportResult> {
   ensureRole(actor, ["cashier", "branch_manager", "admin", "super_admin"]);
   const range = parseDateRange(input);
-  if (range.days > detailRangeLimitDays) throw new HttpsError("invalid-argument", "Payment report date range is too large.");
+  if (range.days > maxDetailReportDays()) throw new HttpsError("invalid-argument", "Payment report date range is too large.");
   const scope = await resolveBranchScope(actor, input);
   const orders = await queryOrders(range, scope.branchIds);
   const orderById = new Map<string, Record<string, unknown>>(orders.map((order) => [String(order.id), order]));
@@ -429,7 +430,7 @@ async function inventoryReport(actor: ActorProfile, input: ReportInput, lowStock
 async function stockMovementReport(actor: ActorProfile, input: ReportInput): Promise<ReportResult> {
   ensureRole(actor, managementRoles);
   const range = parseDateRange(input);
-  if (range.days > detailRangeLimitDays) throw new HttpsError("invalid-argument", "Stock movement report date range is too large.");
+  if (range.days > maxDetailReportDays()) throw new HttpsError("invalid-argument", "Stock movement report date range is too large.");
   const scope = await resolveBranchScope(actor, input);
   const sensitive = includeSensitiveFinancials(actor);
   let movements = await queryMovements(range, scope.branchIds);
@@ -477,7 +478,7 @@ async function stockMovementReport(actor: ActorProfile, input: ReportInput): Pro
 async function reversalReport(actor: ActorProfile, input: ReportInput): Promise<ReportResult> {
   ensureRole(actor, managementRoles);
   const range = parseDateRange(input);
-  if (range.days > detailRangeLimitDays) throw new HttpsError("invalid-argument", "Reversal report date range is too large.");
+  if (range.days > maxDetailReportDays()) throw new HttpsError("invalid-argument", "Reversal report date range is too large.");
   const scope = await resolveBranchScope(actor, input);
   let reversals = await queryReversals(range, scope.branchIds);
   reversals = reversals.filter((reversal) => {
@@ -531,7 +532,7 @@ async function reversalReport(actor: ActorProfile, input: ReportInput): Promise<
 async function creditReport(actor: ActorProfile, input: ReportInput): Promise<ReportResult> {
   ensureRole(actor, managementRoles);
   const range = parseDateRange(input);
-  if (range.days > detailRangeLimitDays) throw new HttpsError("invalid-argument", "Credit report date range is too large.");
+  if (range.days > maxDetailReportDays()) throw new HttpsError("invalid-argument", "Credit report date range is too large.");
   const scope = await resolveBranchScope(actor, input);
   const transactions = (await queryFinancialTransactions(range, scope.branchIds)).filter((txn) =>
     ["credit_sale", "credit_correction"].includes(text(txn.transactionType)),
@@ -569,7 +570,7 @@ async function creditReport(actor: ActorProfile, input: ReportInput): Promise<Re
 
 async function staffActivityReport(actor: ActorProfile, input: ReportInput): Promise<ReportResult> {
   const range = parseDateRange(input);
-  if (range.days > detailRangeLimitDays) throw new HttpsError("invalid-argument", "Staff activity report date range is too large.");
+  if (range.days > maxDetailReportDays()) throw new HttpsError("invalid-argument", "Staff activity report date range is too large.");
   const operational = operationalRoles.includes(actor.platformRole);
   const scope = await resolveBranchScope(actor, input);
   if (operational && input.branchScope === "all_branches") {
@@ -785,7 +786,7 @@ export async function exportReportAction(actorUid: string | undefined, input: un
   const actor = await requireActor(actorUid);
   const data: ExportReportInput = exportReportSchema.parse(input);
   const range = parseDateRange(data);
-  if (range.days > exportRangeLimitDays) {
+  if (range.days > maxReportExportDays()) {
     throw new HttpsError("invalid-argument", "Exports are limited to 31 days.");
   }
   const report = await runReport(actor, data.reportType, { ...data, pageSize: 500 });
@@ -811,11 +812,12 @@ export async function rebuildReportSummariesAction(actorUid: string | undefined,
   ensureRole(actor, adminRoles);
   const data = rebuildReportSummariesSchema.parse(input);
   const range = parseDateRange(data);
-  if (range.days > detailRangeLimitDays) {
+  if (range.days > maxDetailReportDays()) {
     throw new HttpsError("invalid-argument", "Summary rebuild range is too large.");
   }
   const scope = await resolveBranchScope(actor, data);
   const dashboard = await dashboardSummary(actor, { ...data, filters: {} });
+  await writeReportSummaryDocuments(range, scope.branchIds, "manual");
   return {
     generatedBy: "manual",
     branchScope: scope.branchScope,
@@ -825,4 +827,88 @@ export async function rebuildReportSummariesAction(actorUid: string | undefined,
     summary: dashboard.summary,
     updatedAt: new Date().toISOString(),
   };
+}
+
+function periodKey(date: string) {
+  return date.replaceAll("-", "");
+}
+
+async function writeReportSummaryDocuments(
+  range: DateRange,
+  branchIds: string[],
+  generatedBy: "scheduled" | "manual" | "transactional",
+) {
+  const [orders, payments, reversals] = await Promise.all([
+    queryOrders(range, branchIds),
+    queryFinancialTransactions(range, branchIds),
+    queryReversals(range, branchIds),
+  ]);
+  const completed = completedSaleOrders(orders);
+  const cashReceivedKobo = payments.filter((row) => row.paymentMethod === "cash").reduce((sum, row) => sum + positiveInt(row.amountKobo), 0);
+  const transferReceivedKobo = payments.filter((row) => row.paymentMethod === "bank_transfer").reduce((sum, row) => sum + positiveInt(row.amountKobo), 0);
+  const posReceivedKobo = payments.filter((row) => row.paymentMethod === "pos_terminal").reduce((sum, row) => sum + positiveInt(row.amountKobo), 0);
+  const creditSalesKobo = payments.filter((row) => row.paymentMethod === "credit").reduce((sum, row) => sum + positiveInt(row.amountKobo), 0);
+  const lowStockSnapshots = await Promise.all(
+    branchIds.map((branchId) =>
+      adminDb().collection(`branches/${branchId}/inventory`).limit(reportQueryLimit).get(),
+    ),
+  );
+  const lowStockCount = lowStockSnapshots
+    .flatMap((snapshot) => snapshot.docs.map((doc) => doc.data()))
+    .filter((row) => positiveInt(row.onHandQty) - positiveInt(row.reservedQty) <= positiveInt(row.reorderLevel)).length;
+  const summary = {
+    periodType: "daily",
+    periodKey: periodKey(range.startDate),
+    grossSalesKobo: completed.reduce((sum, order) => sum + positiveInt(order.subtotalKobo), 0),
+    netSalesKobo: completed.filter((order) => order.status !== "reversed").reduce((sum, order) => sum + positiveInt(order.grandTotalKobo), 0),
+    paymentReceivedKobo: cashReceivedKobo + transferReceivedKobo + posReceivedKobo,
+    creditSalesKobo,
+    refundsKobo: reversals.reduce((sum, row) => sum + positiveInt(row.refundAmountKobo), 0),
+    reversalValueKobo: reversals.reduce((sum, row) => sum + positiveInt(row.reversalSubtotalKobo), 0),
+    ...saleStatusCounts(orders),
+    cashReceivedKobo,
+    transferReceivedKobo,
+    posReceivedKobo,
+    lowStockCount,
+    updatedAt: FieldValue.serverTimestamp(),
+    generatedBy,
+  };
+
+  const batch = adminDb().batch();
+  for (const branchId of branchIds) {
+    const branchOrders = orders.filter((order) => order.branchId === branchId);
+    const branchPayments = payments.filter((payment) => payment.branchId === branchId);
+    const branchReversals = reversals.filter((reversal) => reversal.branchId === branchId);
+    const branchCompleted = completedSaleOrders(branchOrders);
+    batch.set(adminDb().doc(`reportSummaries/dailyBranch_${branchId}_${periodKey(range.startDate)}`), {
+      ...summary,
+      branchId,
+      grossSalesKobo: branchCompleted.reduce((sum, order) => sum + positiveInt(order.subtotalKobo), 0),
+      netSalesKobo: branchCompleted.filter((order) => order.status !== "reversed").reduce((sum, order) => sum + positiveInt(order.grandTotalKobo), 0),
+      paymentReceivedKobo: branchPayments.filter((payment) => payment.paymentMethod !== "credit").reduce((sum, payment) => sum + positiveInt(payment.amountKobo), 0),
+      creditSalesKobo: branchPayments.filter((payment) => payment.paymentMethod === "credit").reduce((sum, payment) => sum + positiveInt(payment.amountKobo), 0),
+      refundsKobo: branchReversals.reduce((sum, row) => sum + positiveInt(row.refundAmountKobo), 0),
+      reversalValueKobo: branchReversals.reduce((sum, row) => sum + positiveInt(row.reversalSubtotalKobo), 0),
+      ...saleStatusCounts(branchOrders),
+    }, { merge: true });
+  }
+  batch.set(adminDb().doc(`reportSummaries/dailyCompany_${periodKey(range.startDate)}`), summary, { merge: true });
+  await batch.commit();
+  return summary;
+}
+
+export async function rebuildYesterdayReportSummariesAction() {
+  const end = new Date();
+  end.setUTCDate(end.getUTCDate() - 1);
+  const date = end.toISOString().slice(0, 10);
+  const range = parseDateRange({ startDate: date, endDate: date }, "today");
+  const branches = await adminDb().collection("branches").where("isActive", "==", true).limit(100).get();
+  const branchIds = branches.docs.map((doc) => doc.id);
+  if (branchIds.length === 0) {
+    logWarn("report_summaries.no_active_branches", { date });
+    return { branchCount: 0, date };
+  }
+  await writeReportSummaryDocuments(range, branchIds, "scheduled");
+  logInfo("report_summaries.rebuilt", { date, branchCount: branchIds.length });
+  return { branchCount: branchIds.length, date };
 }

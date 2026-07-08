@@ -1,6 +1,7 @@
 import { onCall } from "firebase-functions/v2/https";
 
 import { toHttpsError } from "../shared/errors";
+import { callableOptions, sensitiveCallableOptions } from "../shared/runtime";
 import {
   exportReportAction,
   getCreditReportAction,
@@ -15,7 +16,7 @@ import {
   rebuildReportSummariesAction,
 } from "./service";
 
-export const getDashboardSummary = onCall(async (request) => {
+export const getDashboardSummary = onCall(callableOptions(), async (request) => {
   try {
     return await getDashboardSummaryAction(request.auth?.uid, request.data);
   } catch (error) {
@@ -23,7 +24,7 @@ export const getDashboardSummary = onCall(async (request) => {
   }
 });
 
-export const getSalesReport = onCall(async (request) => {
+export const getSalesReport = onCall(callableOptions(), async (request) => {
   try {
     return await getSalesReportAction(request.auth?.uid, request.data);
   } catch (error) {
@@ -31,7 +32,7 @@ export const getSalesReport = onCall(async (request) => {
   }
 });
 
-export const getPaymentReport = onCall(async (request) => {
+export const getPaymentReport = onCall(callableOptions(), async (request) => {
   try {
     return await getPaymentReportAction(request.auth?.uid, request.data);
   } catch (error) {
@@ -39,7 +40,7 @@ export const getPaymentReport = onCall(async (request) => {
   }
 });
 
-export const getInventoryReport = onCall(async (request) => {
+export const getInventoryReport = onCall(callableOptions(), async (request) => {
   try {
     return await getInventoryReportAction(request.auth?.uid, request.data);
   } catch (error) {
@@ -47,7 +48,7 @@ export const getInventoryReport = onCall(async (request) => {
   }
 });
 
-export const getStockMovementReport = onCall(async (request) => {
+export const getStockMovementReport = onCall(callableOptions(), async (request) => {
   try {
     return await getStockMovementReportAction(request.auth?.uid, request.data);
   } catch (error) {
@@ -55,7 +56,7 @@ export const getStockMovementReport = onCall(async (request) => {
   }
 });
 
-export const getReversalReport = onCall(async (request) => {
+export const getReversalReport = onCall(callableOptions(), async (request) => {
   try {
     return await getReversalReportAction(request.auth?.uid, request.data);
   } catch (error) {
@@ -63,7 +64,7 @@ export const getReversalReport = onCall(async (request) => {
   }
 });
 
-export const getCreditReport = onCall(async (request) => {
+export const getCreditReport = onCall(callableOptions(), async (request) => {
   try {
     return await getCreditReportAction(request.auth?.uid, request.data);
   } catch (error) {
@@ -71,7 +72,7 @@ export const getCreditReport = onCall(async (request) => {
   }
 });
 
-export const getStaffActivityReport = onCall(async (request) => {
+export const getStaffActivityReport = onCall(callableOptions(), async (request) => {
   try {
     return await getStaffActivityReportAction(request.auth?.uid, request.data);
   } catch (error) {
@@ -79,7 +80,7 @@ export const getStaffActivityReport = onCall(async (request) => {
   }
 });
 
-export const getLowStockReport = onCall(async (request) => {
+export const getLowStockReport = onCall(callableOptions(), async (request) => {
   try {
     return await getLowStockReportAction(request.auth?.uid, request.data);
   } catch (error) {
@@ -87,7 +88,7 @@ export const getLowStockReport = onCall(async (request) => {
   }
 });
 
-export const exportReport = onCall(async (request) => {
+export const exportReport = onCall(sensitiveCallableOptions({ timeoutSeconds: 120 }), async (request) => {
   try {
     return await exportReportAction(request.auth?.uid, request.data);
   } catch (error) {
@@ -95,7 +96,7 @@ export const exportReport = onCall(async (request) => {
   }
 });
 
-export const rebuildReportSummaries = onCall(async (request) => {
+export const rebuildReportSummaries = onCall(sensitiveCallableOptions({ timeoutSeconds: 120 }), async (request) => {
   try {
     return await rebuildReportSummariesAction(request.auth?.uid, request.data);
   } catch (error) {

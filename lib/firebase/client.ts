@@ -2,6 +2,10 @@
 
 import { getApp, getApps, initializeApp } from "firebase/app";
 import {
+  ReCaptchaEnterpriseProvider,
+  initializeAppCheck,
+} from "firebase/app-check";
+import {
   connectAuthEmulator,
   getAuth,
   type Auth,
@@ -25,6 +29,7 @@ import {
 import { getClientRuntimeEnv, getFirebaseClientEnv } from "@/lib/env/client";
 
 let emulatorsConnected = false;
+let appCheckInitialized = false;
 
 export function getFirebaseApp() {
   if (getApps().length > 0) {
@@ -41,11 +46,33 @@ export function getFirebaseServices(): {
   storage: FirebaseStorage;
 } {
   const app = getFirebaseApp();
+  const runtimeEnv = getClientRuntimeEnv();
+  const clientEnv = getFirebaseClientEnv();
   const auth = getAuth(app);
   const db = getFirestore(app);
-  const functions = getFunctions(app, "us-central1");
+  const functions = getFunctions(app, runtimeEnv.defaultFunctionRegion);
   const storage = getStorage(app);
-  const runtimeEnv = getClientRuntimeEnv();
+
+  if (
+    typeof window !== "undefined" &&
+    runtimeEnv.enableAppCheck &&
+    !runtimeEnv.useFirebaseEmulators &&
+    !appCheckInitialized
+  ) {
+    if (!clientEnv.appCheckSiteKey) {
+      throw new Error("App Check site key is required when App Check is enabled.");
+    }
+    if (runtimeEnv.appCheckDebugToken) {
+      Object.assign(window, {
+        FIREBASE_APPCHECK_DEBUG_TOKEN: runtimeEnv.appCheckDebugToken,
+      });
+    }
+    initializeAppCheck(app, {
+      provider: new ReCaptchaEnterpriseProvider(clientEnv.appCheckSiteKey),
+      isTokenAutoRefreshEnabled: true,
+    });
+    appCheckInitialized = true;
+  }
 
   if (
     typeof window !== "undefined" &&

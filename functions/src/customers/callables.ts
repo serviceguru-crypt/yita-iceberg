@@ -1,9 +1,10 @@
 import { onCall } from "firebase-functions/v2/https";
 
 import { toHttpsError } from "../shared/errors";
+import { callableOptions } from "../shared/runtime";
 import { createCustomerAction, updateCustomerAction } from "./service";
 
-export const createCustomer = onCall(async (request) => {
+export const createCustomer = onCall(callableOptions(), async (request) => {
   try {
     return await createCustomerAction(request.auth?.uid, request.data);
   } catch (error) {
@@ -11,7 +12,7 @@ export const createCustomer = onCall(async (request) => {
   }
 });
 
-export const updateCustomer = onCall(async (request) => {
+export const updateCustomer = onCall(callableOptions(), async (request) => {
   try {
     return await updateCustomerAction(request.auth?.uid, request.data);
   } catch (error) {

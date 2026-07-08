@@ -1,6 +1,7 @@
 import { onCall } from "firebase-functions/v2/https";
 
 import { toHttpsError } from "../shared/errors";
+import { callableOptions, sensitiveCallableOptions } from "../shared/runtime";
 import {
   approveDiscountAction,
   cancelOrderAction,
@@ -14,7 +15,7 @@ import {
   verifyAndCompleteReleaseAction,
 } from "./service";
 
-export const createOrder = onCall(async (request) => {
+export const createOrder = onCall(sensitiveCallableOptions(), async (request) => {
   try {
     return await createOrderAction(request.auth?.uid, request.data);
   } catch (error) {
@@ -22,7 +23,7 @@ export const createOrder = onCall(async (request) => {
   }
 });
 
-export const createPaymentProofUploadIntent = onCall(async (request) => {
+export const createPaymentProofUploadIntent = onCall(sensitiveCallableOptions(), async (request) => {
   try {
     return await createPaymentProofUploadIntentAction(request.auth?.uid, request.data);
   } catch (error) {
@@ -30,7 +31,7 @@ export const createPaymentProofUploadIntent = onCall(async (request) => {
   }
 });
 
-export const reissueOrderQrToken = onCall(async (request) => {
+export const reissueOrderQrToken = onCall(sensitiveCallableOptions(), async (request) => {
   try {
     return await reissueOrderQrTokenAction(request.auth?.uid, request.data);
   } catch (error) {
@@ -38,7 +39,7 @@ export const reissueOrderQrToken = onCall(async (request) => {
   }
 });
 
-export const validateReleaseQr = onCall(async (request) => {
+export const validateReleaseQr = onCall(callableOptions(), async (request) => {
   try {
     return await validateReleaseQrAction(request.auth?.uid, request.data);
   } catch (error) {
@@ -46,7 +47,7 @@ export const validateReleaseQr = onCall(async (request) => {
   }
 });
 
-export const updateUnpaidOrder = onCall(async (request) => {
+export const updateUnpaidOrder = onCall(sensitiveCallableOptions(), async (request) => {
   try {
     return await updateUnpaidOrderAction(request.auth?.uid, request.data);
   } catch (error) {
@@ -54,7 +55,7 @@ export const updateUnpaidOrder = onCall(async (request) => {
   }
 });
 
-export const cancelOrder = onCall(async (request) => {
+export const cancelOrder = onCall(sensitiveCallableOptions(), async (request) => {
   try {
     return await cancelOrderAction(request.auth?.uid, request.data);
   } catch (error) {
@@ -62,7 +63,7 @@ export const cancelOrder = onCall(async (request) => {
   }
 });
 
-export const requestDiscountApproval = onCall(async (request) => {
+export const requestDiscountApproval = onCall(sensitiveCallableOptions(), async (request) => {
   try {
     return await requestDiscountApprovalAction(request.auth?.uid, request.data);
   } catch (error) {
@@ -70,7 +71,7 @@ export const requestDiscountApproval = onCall(async (request) => {
   }
 });
 
-export const approveDiscount = onCall(async (request) => {
+export const approveDiscount = onCall(sensitiveCallableOptions(), async (request) => {
   try {
     return await approveDiscountAction(request.auth?.uid, request.data);
   } catch (error) {
@@ -78,7 +79,7 @@ export const approveDiscount = onCall(async (request) => {
   }
 });
 
-export const confirmPayment = onCall(async (request) => {
+export const confirmPayment = onCall(sensitiveCallableOptions(), async (request) => {
   try {
     return await confirmPaymentAction(request.auth?.uid, request.data);
   } catch (error) {
@@ -86,7 +87,7 @@ export const confirmPayment = onCall(async (request) => {
   }
 });
 
-export const verifyAndCompleteRelease = onCall(async (request) => {
+export const verifyAndCompleteRelease = onCall(sensitiveCallableOptions(), async (request) => {
   try {
     return await verifyAndCompleteReleaseAction(request.auth?.uid, request.data);
   } catch (error) {

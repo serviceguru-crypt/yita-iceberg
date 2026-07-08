@@ -12,7 +12,7 @@ Inventory is reserved when an order is created. Stock is only finally deducted w
 
 ## Current Project Status
 
-Phase 8 is implemented: the app now has authenticated operational screens, the three-step POS flow, branch inventory views, product catalog setup, stock receipts, adjustment requests, stock counts, protected valuation documents, completed-sale reversals, returns, refund records, credit corrections, dashboards, branch-scoped reports, CSV exports, and emulator-backed tests.
+Phase 9 is implemented: the app now has authenticated operational screens, three-step POS, inventory and valuation controls, reversals, reports, CSV exports, production environment separation, App Check readiness, deployment/CI templates, monitoring/backup documentation, smoke tests, and admin runbooks.
 
 ## Target Stack
 
@@ -57,6 +57,14 @@ storage.rules                Firebase Storage rules
 - [Order State Machine](docs/order-state-machine.md)
 - [Security Model](docs/security-model.md)
 - [Reporting](docs/reporting.md)
+- [Environment](docs/environment.md)
+- [Deployment](docs/deployment.md)
+- [Monitoring](docs/monitoring.md)
+- [Backup And Recovery](docs/backup-and-recovery.md)
+- [CI/CD](docs/ci-cd.md)
+- [Release Checklist](docs/release-checklist.md)
+- [Smoke Tests](docs/smoke-tests.md)
+- [Performance And Cost](docs/performance-and-cost.md)
 - [Development Plan](docs/development-plan.md)
 
 ## Local Commands
@@ -72,10 +80,21 @@ npm run functions:test
 npm run functions:typecheck
 npm run functions:lint
 npm run functions:build
+npm run smoke:test -- --dry-run
 npm run migrate:phase6
 ```
 
-Phase 4-8 backend functions are covered by `npm run functions:test`, which runs against the Auth, Firestore, and Storage emulators. Firestore and Storage access rules are covered by `npm run rules:test`.
+Phase 4-9 backend functions are covered by `npm run functions:test`, which runs against the Auth, Firestore, and Storage emulators. Firestore and Storage access rules are covered by `npm run rules:test`.
+
+## Environment Setup
+
+Copy the relevant example file and fill in real values:
+
+```bash
+cp .env.local.example .env.local
+```
+
+Use `.env.staging.example` for staging and `.env.production.example` for production. Never commit real environment files, service account JSON, private keys, or App Check debug tokens.
 
 ## Phase 5 Operational UI
 
@@ -160,7 +179,37 @@ Reports are loaded through callable functions, not direct client reads of protec
 
 CSV export is implemented through `exportReport`. It returns server-authorized CSV content and a filename to the browser. The app does not create public Storage export files in this phase.
 
-Phase 8 verification:
+## Phase 9 Production Readiness
+
+Production readiness additions:
+
+- Firebase App Hosting config in `apphosting.yaml`.
+- Staging/production environment examples.
+- App Check client initialization and callable enforcement flag.
+- Structured Cloud Functions logging with sensitive-field redaction.
+- Scheduled `expireStaleOrders` and `rebuildReportSummariesScheduled`.
+- GitHub Actions CI and manual staging/production deploy workflows.
+- Production-safe smoke test script.
+- Backup, monitoring, deployment, CI/CD, release, and cost documentation.
+- Admin runbooks under `docs/runbooks/`.
+
+Deployment commands:
+
+```bash
+npm run firebase:use:staging
+npm run deploy:rules:staging
+npm run deploy:indexes:staging
+npm run deploy:functions:staging
+
+npm run firebase:use:production
+npm run deploy:rules:production
+npm run deploy:indexes:production
+npm run deploy:functions:production
+```
+
+Firebase App Hosting rollout is configured separately through Firebase Console or Google Cloud and uses `apphosting.yaml`.
+
+Phase 9 verification:
 
 ```text
 npm run typecheck: passed
@@ -170,7 +219,8 @@ npm run functions:typecheck: passed
 npm run functions:lint: passed
 npm run functions:build: passed
 npm run rules:test: 1 file passed, 22 tests passed
-npm run functions:test: 5 files passed, 51 tests passed
+npm run functions:test: 6 files passed, 57 tests passed
+npm run smoke:test -- --dry-run: passed
 git diff --check: passed
 ```
 
@@ -190,7 +240,7 @@ BOOTSTRAP_CONFIRM=true \
 npm run bootstrap:super-admin
 ```
 
-For production, set the same bootstrap variables plus server credentials through your secure environment. The script refuses to run unless `BOOTSTRAP_CONFIRM=true`. It also refuses to create another super-admin when one already exists unless `BOOTSTRAP_EMERGENCY_OVERRIDE=true` is explicitly provided.
+For production, set the same bootstrap variables plus server credentials through your secure environment. The script refuses to run unless `BOOTSTRAP_CONFIRM=true`. Production also requires `BOOTSTRAP_ALLOW_PRODUCTION=true` and `BOOTSTRAP_PRODUCTION_CONFIRMATION=BOOTSTRAP_SUPER_ADMIN_IN_PRODUCTION`. It also refuses to create another super-admin when one already exists unless `BOOTSTRAP_EMERGENCY_OVERRIDE=true` is explicitly provided.
 
 The script creates the Firebase Auth user without logging secrets. Set or reset the user's password through Firebase Console or an approved administrative password reset process.
 
@@ -267,6 +317,7 @@ Implemented callable functions:
 Implemented scheduled backend function:
 
 - `expireStaleOrders`
+- `rebuildReportSummariesScheduled`
 
 Order fulfilment state and payment settlement state are separate:
 
@@ -277,14 +328,19 @@ paymentStatus: unpaid | paid | credit
 
 ## Environment Variables
 
-Phase 2 will define validated environment variables. Expected categories:
+See [Environment](docs/environment.md). Production secrets must never be committed to the repository.
 
-- Public Firebase web config values exposed to the browser with `NEXT_PUBLIC_` prefixes.
-- Server-only Firebase Admin configuration for Cloud Functions and privileged server contexts.
-- App Check, emulator, and deployment toggles.
-- Optional integration secrets stored outside frontend bundles.
+## Backups And Smoke Tests
 
-Production secrets must never be committed to the repository.
+Configure scheduled Firestore exports before production launch. See [Backup And Recovery](docs/backup-and-recovery.md).
+
+Run staging smoke tests after deploy:
+
+```bash
+npm run smoke:test -- --dry-run
+```
+
+Production smoke tests require `SMOKE_TEST_ALLOW_PRODUCTION=true` and `SMOKE_TEST_PRODUCTION_CONFIRMATION=RUN_SMOKE_TESTS_AGAINST_PRODUCTION`.
 
 ## Manual Firebase Setup
 

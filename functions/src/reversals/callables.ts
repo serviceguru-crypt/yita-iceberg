@@ -1,6 +1,7 @@
 import { onCall } from "firebase-functions/v2/https";
 
 import { toHttpsError } from "../shared/errors";
+import { callableOptions, sensitiveCallableOptions } from "../shared/runtime";
 import {
   approveReversalRequestAction,
   cancelReversalRequestAction,
@@ -10,8 +11,11 @@ import {
   rejectReversalRequestAction,
 } from "./service";
 
-function callable(handler: (uid: string | undefined, data: unknown) => Promise<unknown>) {
-  return onCall(async (request) => {
+function callable(
+  handler: (uid: string | undefined, data: unknown) => Promise<unknown>,
+  sensitive = true,
+) {
+  return onCall(sensitive ? sensitiveCallableOptions() : callableOptions(), async (request) => {
     try {
       return await handler(request.auth?.uid, request.data);
     } catch (error) {
@@ -20,7 +24,7 @@ function callable(handler: (uid: string | undefined, data: unknown) => Promise<u
   });
 }
 
-export const getReversalPreview = callable(getReversalPreviewAction);
+export const getReversalPreview = callable(getReversalPreviewAction, false);
 export const createReversalRequest = callable(createReversalRequestAction);
 export const approveReversalRequest = callable(approveReversalRequestAction);
 export const rejectReversalRequest = callable(rejectReversalRequestAction);

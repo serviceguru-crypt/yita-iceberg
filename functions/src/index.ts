@@ -1,6 +1,8 @@
 import { initializeApp } from "firebase-admin/app";
 import { setGlobalOptions } from "firebase-functions/v2/options";
 
+import { functionRegion } from "./shared/runtime";
+
 export { createCustomer, updateCustomer } from "./customers/callables";
 export {
   addBranchProduct,
@@ -52,6 +54,7 @@ export {
   rebuildReportSummaries,
 } from "./reports/callables";
 export { expireStaleOrders } from "./orders/scheduled";
+export { rebuildReportSummariesScheduled } from "./reports/scheduled";
 export {
   deactivateUser,
   provisionUser,
@@ -64,7 +67,9 @@ initializeApp();
 
 setGlobalOptions({
   maxInstances: 10,
-  region: "us-central1",
+  region: functionRegion(),
+  memory: "512MiB",
+  timeoutSeconds: 60,
 });
 
 // Sales, payments, orders, inventory, and reversal functions begin in Phase 4.

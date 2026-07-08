@@ -1,6 +1,7 @@
 import { onCall } from "firebase-functions/v2/https";
 
 import { toHttpsError } from "../shared/errors";
+import { sensitiveCallableOptions } from "../shared/runtime";
 import {
   addBranchProductAction,
   approveInventoryAdjustmentAction,
@@ -19,7 +20,7 @@ import {
 } from "./service";
 
 function callable(handler: (uid: string | undefined, data: unknown) => Promise<unknown>) {
-  return onCall(async (request) => {
+  return onCall(sensitiveCallableOptions(), async (request) => {
     try {
       return await handler(request.auth?.uid, request.data);
     } catch (error) {
