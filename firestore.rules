@@ -142,6 +142,19 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /reportSummaries/{summaryId} {
+      allow read: if activeUser()
+        && (
+          isAdmin()
+          || (resource.data.branchId is string && hasBranchAccess(resource.data.branchId))
+        );
+      allow write: if false;
+    }
+
+    match /reportExports/{exportId} {
+      allow read, write: if false;
+    }
+
     match /auditLogs/{auditId} {
       allow read: if isAdmin() || isBranchManagerFor(resource.data.branchId);
       allow write: if false;

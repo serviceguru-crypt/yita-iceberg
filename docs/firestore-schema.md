@@ -227,17 +227,38 @@ stockCounts/{stockCountId}/items/{productId}
 
 saleReversals/{reversalId}
   orderId
+  orderNumber
   branchId
+  reversalNumber
   reversalType
+  status
   reason
+  internalNote
   items[]
+  originalOrderTotalKobo
+  reversalSubtotalKobo
+  refundAmountKobo
+  refundMethod
+  creditReductionKobo
+  stockReturnRequired
   stockReturned
-  refundAmount
-  createdBy
-  createdAt
+  financialImpact
+  requestedBy
+  requestedAt
   approvedBy
   approvedAt
-  status
+  approvalNote
+  rejectedBy
+  rejectedAt
+  rejectionReason
+  completedBy
+  completedAt
+  cancelledBy
+  cancelledAt
+  cancellationReason
+  idempotencyKeyHash
+  createdAt
+  updatedAt
 
 auditLogs/{auditId}
   actorId
@@ -276,6 +297,38 @@ paymentProofUploadIntents/{paymentId}
   consumed
   consumedAt
   idempotencyKeyHash
+
+reportSummaries/{summaryId}
+  branchId
+  periodType
+  periodKey
+  grossSalesKobo
+  netSalesKobo
+  paymentReceivedKobo
+  creditSalesKobo
+  refundsKobo
+  reversalValueKobo
+  orderCount
+  completedOrderCount
+  cancelledOrderCount
+  expiredOrderCount
+  reversedOrderCount
+  partiallyReversedOrderCount
+  cashReceivedKobo
+  transferReceivedKobo
+  posReceivedKobo
+  lowStockCount
+  stockValueKobo
+  updatedAt
+  generatedBy
+
+reportExports/{exportId}
+  branchId
+  reportType
+  storagePath
+  createdBy
+  createdAt
+  expiresAt
 ```
 
 ## Order Item Snapshot
@@ -343,6 +396,8 @@ inventory_increase_adjustment
 inventory_decrease_adjustment
 damage_write_off
 stock_count_reconciliation
+sale_returned
+sale_reversed_no_stock_return
 ```
 
 The stock movement ledger is append-only. Corrections create new movement records instead of editing or deleting historical entries.
@@ -350,6 +405,19 @@ The stock movement ledger is append-only. Corrections create new movement record
 ## Query and Reporting Notes
 
 Reports must avoid unbounded reads. Operational queries should use branch, status, and date filters with pagination. Higher-level dashboards should use aggregation documents or scheduled rollups once reporting requirements stabilize.
+
+Phase 8 report callables read from `orders`, `orders/{orderId}/payments`, `financialTransactions`, `saleReversals`, `stockMovements`, `auditLogs`, and branch inventory subcollections. Each report validates branch scope server-side and returns sanitized rows.
+
+Reserved summary document IDs:
+
+```text
+reportSummaries/dailyBranch_{branchId}_{yyyyMMdd}
+reportSummaries/dailyCompany_{yyyyMMdd}
+reportSummaries/monthlyBranch_{branchId}_{yyyyMM}
+reportSummaries/monthlyCompany_{yyyyMM}
+```
+
+Client writes to `reportSummaries` and `reportExports` are denied. Company summary documents without `branchId` are admin/super-admin readable only. Branch summary documents are branch-scoped, while protected valuation fields remain exposed through report callables only when the actor is authorized.
 
 ## Phase 5 Operational Query Notes
 
@@ -379,3 +447,39 @@ newAverageUnitCostKobo = floor((previousStockValueKobo + receiptLineValueKobo) /
 Stock-outs and approved decreases remove value using the current average unit cost. Removing all remaining stock removes the entire remaining stock value to avoid rounding residue.
 
 Inventory adjustments are request/review workflows. A request never mutates stock. Approval mutates stock and financials transactionally. Stock count approval is rejected if current `onHandQty` no longer matches the count's captured expected quantity, forcing a fresh count instead of reconciling stale data.
+
+## Phase 7 Reversal Notes
+
+Reversals are correction records, not order edits. Completed orders retain their original items, payments, release fields, stock movements, and audit logs. Completion updates the order status only to `partially_reversed` or `reversed`.
+
+Reversal item shape:
+
+```text
+productId
+sku
+productName
+unit
+originalSoldQuantity
+previouslyReversedQuantity
+requestedReversalQuantity
+originalUnitPriceKobo
+reversalLineTotalKobo
+stockReturnedQuantity
+stockNotReturnedQuantity
+inventoryUnitCostKobo
+inventoryValueImpactKobo
+```
+
+Phase 7 uses `reversedSoldQty` on branch inventory as the correction counter. `soldQty` remains the historical gross sales quantity. Returned stock increases `onHandQty` and `returnedQty`; stock not physically returned does not change `onHandQty`.
+
+Returned-stock valuation uses the original `stock_out` movement cost basis when available. New Phase 7 stock-out movements include `unitCostKobo` and `inventoryValueImpactKobo`. If an older stock-out lacks cost metadata, completion falls back to the current `inventoryFinancials.averageUnitCostKobo`; it never uses product default cost blindly.
+
+Financial correction transactions:
+
+```text
+sale_refund              direction: out
+credit_reduction         direction: receivable_reduction
+reversal_adjustment      direction: none
+```
+
+Refund and credit records are audit records only. No external money movement is executed by the system.

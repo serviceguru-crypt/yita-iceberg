@@ -71,6 +71,10 @@ service firebase.storage {
         && request.resource.contentType.matches('image/(jpeg|png|webp)|application/pdf');
     }
 
+    match /report-exports/{allPaths=**} {
+      allow read, write: if false;
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

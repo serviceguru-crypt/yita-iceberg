@@ -30,6 +30,27 @@ export {
   validateReleaseQr,
   verifyAndCompleteRelease,
 } from "./orders/callables";
+export {
+  approveReversalRequest,
+  cancelReversalRequest,
+  completeApprovedReversal,
+  createReversalRequest,
+  getReversalPreview,
+  rejectReversalRequest,
+} from "./reversals/callables";
+export {
+  exportReport,
+  getCreditReport,
+  getDashboardSummary,
+  getInventoryReport,
+  getLowStockReport,
+  getPaymentReport,
+  getReversalReport,
+  getSalesReport,
+  getStaffActivityReport,
+  getStockMovementReport,
+  rebuildReportSummaries,
+} from "./reports/callables";
 export { expireStaleOrders } from "./orders/scheduled";
 export {
   deactivateUser,

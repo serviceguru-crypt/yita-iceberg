@@ -211,6 +211,81 @@ async function seedBaseData() {
         expectedOnHandQtyAtStart: 10,
         status: "pending",
       }),
+      setDoc(doc(db, "saleReversals/reversal-a"), {
+        reversalNumber: "RV-A",
+        orderId: "order-a",
+        orderNumber: "YI-A",
+        branchId: "branch-a",
+        reversalType: "partial_reversal_with_stock_return",
+        status: "requested",
+        reason: "Returned item",
+        requestedBy: "manager-a",
+        requestedAt: serverTimestamp(),
+        items: [],
+        originalOrderTotalKobo: 100000,
+        reversalSubtotalKobo: 50000,
+        refundAmountKobo: 50000,
+        creditReductionKobo: 0,
+        stockReturnRequired: true,
+        stockReturned: false,
+        financialImpact: "refund_recorded",
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }),
+      setDoc(doc(db, "saleReversals/reversal-b"), {
+        reversalNumber: "RV-B",
+        orderId: "order-b",
+        orderNumber: "YI-B",
+        branchId: "branch-b",
+        reversalType: "full_reversal_without_stock_return",
+        status: "completed",
+        reason: "Other branch",
+        requestedBy: "manager-b",
+        requestedAt: serverTimestamp(),
+        items: [],
+        originalOrderTotalKobo: 100000,
+        reversalSubtotalKobo: 100000,
+        refundAmountKobo: 100000,
+        creditReductionKobo: 0,
+        stockReturnRequired: false,
+        stockReturned: false,
+        financialImpact: "refund_recorded",
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }),
+      setDoc(doc(db, "reportSummaries/dailyBranch_branch-a_20260708"), {
+        branchId: "branch-a",
+        periodType: "daily",
+        periodKey: "20260708",
+        grossSalesKobo: 100000,
+        netSalesKobo: 100000,
+        stockValueKobo: 600000,
+        updatedAt: serverTimestamp(),
+        generatedBy: "manual",
+      }),
+      setDoc(doc(db, "reportSummaries/dailyBranch_branch-b_20260708"), {
+        branchId: "branch-b",
+        periodType: "daily",
+        periodKey: "20260708",
+        grossSalesKobo: 100000,
+        netSalesKobo: 100000,
+        updatedAt: serverTimestamp(),
+        generatedBy: "manual",
+      }),
+      setDoc(doc(db, "reportSummaries/dailyCompany_20260708"), {
+        periodType: "daily",
+        periodKey: "20260708",
+        grossSalesKobo: 200000,
+        netSalesKobo: 200000,
+        updatedAt: serverTimestamp(),
+        generatedBy: "manual",
+      }),
+      setDoc(doc(db, "reportExports/export-a"), {
+        branchId: "branch-a",
+        reportType: "sales",
+        storagePath: "report-exports/branch-a/export-a.csv",
+        createdAt: serverTimestamp(),
+      }),
       setDoc(doc(db, "paymentProofUploadIntents/payment-a"), {
         paymentId: "payment-a",
         branchId: "branch-a",
@@ -315,6 +390,27 @@ describe("Firestore branch access rules", () => {
     await assertSucceeds(getDoc(doc(adminDb, "stockReceipts/receipt-a")));
   });
 
+  it("allows branch-scoped reversal reads and blocks cross-branch reads", async () => {
+    const registrarDb = testEnv.authenticatedContext("registrar-a").firestore();
+    const managerDb = testEnv.authenticatedContext("manager-a").firestore();
+    const adminDb = testEnv.authenticatedContext("admin-user").firestore();
+
+    await assertSucceeds(getDoc(doc(registrarDb, "saleReversals/reversal-a")));
+    await assertSucceeds(getDoc(doc(managerDb, "saleReversals/reversal-a")));
+    await assertSucceeds(getDoc(doc(adminDb, "saleReversals/reversal-b")));
+    await assertFails(getDoc(doc(registrarDb, "saleReversals/reversal-b")));
+  });
+
+  it("allows permitted report summary reads and blocks cross-branch summaries", async () => {
+    const managerDb = testEnv.authenticatedContext("manager-a").firestore();
+    const adminDb = testEnv.authenticatedContext("admin-user").firestore();
+
+    await assertSucceeds(getDoc(doc(managerDb, "reportSummaries/dailyBranch_branch-a_20260708")));
+    await assertFails(getDoc(doc(managerDb, "reportSummaries/dailyBranch_branch-b_20260708")));
+    await assertFails(getDoc(doc(managerDb, "reportSummaries/dailyCompany_20260708")));
+    await assertSucceeds(getDoc(doc(adminDb, "reportSummaries/dailyCompany_20260708")));
+  });
+
   it("blocks direct inventory writes", async () => {
     const db = testEnv.authenticatedContext("registrar-a").firestore();
     await assertFails(
@@ -344,6 +440,9 @@ describe("Firestore branch access rules", () => {
     await assertFails(setDoc(doc(db, "stockCounts/count-b"), { branchId: "branch-a" }));
     await assertFails(setDoc(doc(db, "stockCounts/count-a/items/product-1"), { countedQty: 10 }));
     await assertFails(setDoc(doc(db, "stockMovements/movement-b"), { branchId: "branch-a" }));
+    await assertFails(setDoc(doc(db, "saleReversals/reversal-c"), { branchId: "branch-a" }));
+    await assertFails(setDoc(doc(db, "reportSummaries/dailyBranch_branch-a_20260709"), { branchId: "branch-a" }));
+    await assertFails(setDoc(doc(db, "reportExports/export-b"), { branchId: "branch-a" }));
   });
 
   it("blocks direct order creation or edits", async () => {
@@ -420,6 +519,14 @@ describe("Firestore branch access rules", () => {
     );
   });
 
+  it("keeps export metadata private", async () => {
+    const managerDb = testEnv.authenticatedContext("manager-a").firestore();
+    const adminDb = testEnv.authenticatedContext("admin-user").firestore();
+
+    await assertFails(getDoc(doc(managerDb, "reportExports/export-a")));
+    await assertFails(getDoc(doc(adminDb, "reportExports/export-a")));
+  });
+
   it("denies inactive users where rules can enforce active status", async () => {
     const db = testEnv.authenticatedContext("inactive-user").firestore();
     await assertFails(getDoc(doc(db, "users/inactive-user")));
@@ -472,5 +579,10 @@ describe("Storage payment proof rules", () => {
         { contentType: "application/pdf" },
       ),
     );
+  });
+
+  it("does not expose generated report exports publicly", async () => {
+    const adminStorage = testEnv.authenticatedContext("admin-user").storage();
+    await assertFails(getBytes(ref(adminStorage, "report-exports/branch-a/export-a.csv")));
   });
 });

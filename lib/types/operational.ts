@@ -214,6 +214,129 @@ export type StockCountItemDocument = {
   status: "pending" | "counted" | "approved" | "rejected";
 };
 
+export type ReversalType =
+  | "full_reversal_with_stock_return"
+  | "full_reversal_without_stock_return"
+  | "partial_reversal_with_stock_return"
+  | "partial_reversal_without_stock_return"
+  | "refund_only"
+  | "credit_correction"
+  | "correction_note";
+
+export type ReversalStatus =
+  | "requested"
+  | "approved"
+  | "rejected"
+  | "completed"
+  | "cancelled";
+
+export type SaleReversalItemDocument = {
+  productId: string;
+  sku: string;
+  productName: string;
+  unit: string;
+  originalSoldQuantity: number;
+  previouslyReversedQuantity: number;
+  requestedReversalQuantity: number;
+  originalUnitPriceKobo: number;
+  reversalLineTotalKobo: number;
+  stockReturnedQuantity: number;
+  stockNotReturnedQuantity: number;
+  inventoryUnitCostKobo?: number;
+  inventoryValueImpactKobo?: number;
+};
+
+export type SaleReversalDocument = {
+  id: string;
+  reversalNumber: string;
+  orderId: string;
+  orderNumber: string;
+  branchId: string;
+  reversalType: ReversalType;
+  status: ReversalStatus;
+  reason: string;
+  internalNote?: string | null;
+  requestedBy: string;
+  requestedAt?: unknown;
+  approvedBy?: string;
+  approvedAt?: unknown;
+  approvalNote?: string | null;
+  rejectedBy?: string;
+  rejectedAt?: unknown;
+  rejectionReason?: string;
+  completedBy?: string;
+  completedAt?: unknown;
+  cancelledBy?: string;
+  cancelledAt?: unknown;
+  cancellationReason?: string;
+  items: SaleReversalItemDocument[];
+  originalOrderTotalKobo: number;
+  reversalSubtotalKobo: number;
+  refundAmountKobo: number;
+  refundMethod?: "cash" | "bank_transfer" | "pos_reversal" | "credit_note" | "no_refund";
+  creditReductionKobo: number;
+  stockReturnRequired: boolean;
+  stockReturned: boolean;
+  financialImpact: "refund_due" | "refund_recorded" | "credit_reduced" | "no_financial_refund" | "correction_only";
+  createdAt?: unknown;
+  updatedAt?: unknown;
+};
+
+export type ReversalPreviewItem = {
+  productId: string;
+  sku: string;
+  productName: string;
+  unit: string;
+  originalSoldQuantity: number;
+  previouslyReversedQuantity: number;
+  remainingReversibleQuantity: number;
+  originalUnitPriceKobo: number;
+};
+
+export type ReversalPreview = {
+  orderId: string;
+  orderNumber: string;
+  branchId: string;
+  status: OrderStatus;
+  paymentStatus: PaymentStatus;
+  customerType: "walk_in" | "registered";
+  customerId?: string | null;
+  customerSnapshot?: { name?: string; phone?: string; address?: string } | null;
+  originalOrderTotalKobo: number;
+  previousReversalSummary: {
+    refundAmountKobo: number;
+    creditReductionKobo: number;
+    reversedQuantity: number;
+  };
+  maximumRefundableAmountKobo: number;
+  maximumCreditReductionKobo: number;
+  stockReturnPossible: boolean;
+  items: ReversalPreviewItem[];
+};
+
+export type BranchScope = "selected_branch" | "all_branches";
+
+export type ReportType =
+  | "dashboard"
+  | "sales"
+  | "payments"
+  | "inventory"
+  | "stock_movements"
+  | "reversals"
+  | "credit"
+  | "staff_activity"
+  | "low_stock";
+
+export type ReportResult = {
+  summary: Record<string, unknown>;
+  rows: Record<string, unknown>[];
+  nextPageCursor: string | null;
+  generatedAt: string;
+  branchScope: BranchScope;
+  branchIds: string[];
+  sensitiveFieldsIncluded: boolean;
+};
+
 export function timestampLabel(value: unknown) {
   if (!value || typeof value !== "object") return "Not recorded";
   if ("toDate" in value && typeof value.toDate === "function") {

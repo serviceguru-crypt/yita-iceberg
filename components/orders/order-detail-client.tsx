@@ -24,7 +24,7 @@ export function OrderDetailClient({ orderId }: { orderId: string }) {
 }
 
 function OrderDetailContent({ orderId }: { orderId: string }) {
-  const { selectedBranchId } = useBranchContext();
+  const { selectedBranchId, user } = useBranchContext();
   const [order, setOrder] = useState<OrderDocument | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +55,7 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
   if (error || !order) {
     return <OperationState actionLabel="Retry" detail={error ?? undefined} onAction={() => void loadOrder()} title="Order unavailable" />;
   }
+  const canRequestReversal = ["branch_manager", "admin", "super_admin"].includes(user.platformRole);
 
   return (
     <div className="space-y-5">
@@ -76,6 +77,9 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
           ) : null}
           {order.status === "awaiting_release" ? (
             <Button asChild><Link href={`/release/orders/${order.id}`}>Release</Link></Button>
+          ) : null}
+          {canRequestReversal && ["completed", "partially_reversed"].includes(order.status) ? (
+            <Button asChild><Link href={`/orders/${order.id}/reverse`}>Reverse</Link></Button>
           ) : null}
         </div>
       </div>

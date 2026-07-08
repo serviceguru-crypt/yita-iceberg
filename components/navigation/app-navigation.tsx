@@ -11,6 +11,32 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   {
+    href: "/dashboard",
+    label: "Dashboard",
+    roles: [
+      "order_registrar",
+      "cashier",
+      "release_verifier",
+      "branch_manager",
+      "admin",
+      "super_admin",
+    ],
+    enabled: true,
+  },
+  {
+    href: "/reports",
+    label: "Reports",
+    roles: [
+      "order_registrar",
+      "cashier",
+      "release_verifier",
+      "branch_manager",
+      "admin",
+      "super_admin",
+    ],
+    enabled: true,
+  },
+  {
     href: "/profile",
     label: "Profile",
     roles: [
@@ -50,6 +76,12 @@ const navItems: NavItem[] = [
   {
     href: "/inventory",
     label: "Inventory",
+    roles: ["order_registrar", "cashier", "release_verifier", "branch_manager", "admin", "super_admin"],
+    enabled: true,
+  },
+  {
+    href: "/reversals",
+    label: "Reversals",
     roles: ["order_registrar", "cashier", "release_verifier", "branch_manager", "admin", "super_admin"],
     enabled: true,
   },

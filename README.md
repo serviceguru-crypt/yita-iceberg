@@ -12,7 +12,7 @@ Inventory is reserved when an order is created. Stock is only finally deducted w
 
 ## Current Project Status
 
-Phase 6 is implemented: the app now has authenticated operational screens, the three-step POS flow, branch inventory views, product catalog setup, stock receipts, adjustment requests, stock counts, protected valuation documents, and emulator-backed tests.
+Phase 8 is implemented: the app now has authenticated operational screens, the three-step POS flow, branch inventory views, product catalog setup, stock receipts, adjustment requests, stock counts, protected valuation documents, completed-sale reversals, returns, refund records, credit corrections, dashboards, branch-scoped reports, CSV exports, and emulator-backed tests.
 
 ## Target Stack
 
@@ -56,6 +56,7 @@ storage.rules                Firebase Storage rules
 - [Firestore Schema](docs/firestore-schema.md)
 - [Order State Machine](docs/order-state-machine.md)
 - [Security Model](docs/security-model.md)
+- [Reporting](docs/reporting.md)
 - [Development Plan](docs/development-plan.md)
 
 ## Local Commands
@@ -74,7 +75,7 @@ npm run functions:build
 npm run migrate:phase6
 ```
 
-Phase 4-6 backend functions are covered by `npm run functions:test`, which runs against the Auth, Firestore, and Storage emulators. Firestore and Storage access rules are covered by `npm run rules:test`.
+Phase 4-8 backend functions are covered by `npm run functions:test`, which runs against the Auth, Firestore, and Storage emulators. Firestore and Storage access rules are covered by `npm run rules:test`.
 
 ## Phase 5 Operational UI
 
@@ -121,6 +122,58 @@ PHASE6_MIGRATION_CONFIRM=true npm run migrate:phase6
 
 For production, also set Firebase Admin credentials and `PHASE6_ALLOW_PRODUCTION=true`. The script refuses production execution without that explicit override.
 
+## Phase 7 Reversals UI
+
+Implemented reversal routes:
+
+- `/reversals`, `/reversals/new`, `/reversals/[reversalId]`, `/reversals/[reversalId]/approve`
+- `/orders/[orderId]/reverse`
+
+Completed sales are never deleted or directly edited. A reversal is a separate correction record in `saleReversals/{reversalId}`. The workflow is:
+
+```text
+requested -> approved -> completed
+requested -> rejected
+requested -> cancelled
+```
+
+Branch managers can request reversals for completed sales in their assigned branch. Admins and super-admins approve, reject, and complete reversals; branch managers can review/request but completion is admin-only in Phase 7. Completion records stock movements, financial transactions, audit logs, and idempotency records in one transaction.
+
+Stock-return reversals increase `onHandQty` and `returnedQty`. No-stock-return reversals do not create physical stock. `soldQty` remains historical; `reversedSoldQty` tracks corrected sale quantity. Refunds are recorded only as financial correction records; the system does not send money.
+
+## Phase 8 Dashboards And Reports
+
+Implemented reporting routes:
+
+- `/dashboard`
+- `/reports`
+- `/reports/sales`
+- `/reports/payments`
+- `/reports/inventory`
+- `/reports/stock-movements`
+- `/reports/reversals`
+- `/reports/credit`
+- `/reports/staff-activity`
+- `/reports/low-stock`
+
+Reports are loaded through callable functions, not direct client reads of protected ledgers. Every report validates the actor, role, branch scope, date range, pagination size, and filters server-side. Admin and super-admin users may choose all branches. Branch managers are restricted to assigned branches. Operational users get only limited dashboard/activity visibility and cannot access company financial analytics.
+
+CSV export is implemented through `exportReport`. It returns server-authorized CSV content and a filename to the browser. The app does not create public Storage export files in this phase.
+
+Phase 8 verification:
+
+```text
+npm run typecheck: passed
+npm run lint: passed
+npm run build: passed
+npm run functions:typecheck: passed
+npm run functions:lint: passed
+npm run functions:build: passed
+npm run rules:test: 1 file passed, 22 tests passed
+npm run functions:test: 5 files passed, 51 tests passed
+git diff --check: passed
+```
+
 ## Super-Admin Bootstrap
 
 The first super-admin is created by a local Admin SDK script only. It is not exposed through the web app, Firebase Hosting, or callable functions.
@@ -150,6 +203,7 @@ The script creates the Firebase Auth user without logging secrets. Set or reset 
 - Store monetary values as integer kobo.
 - Derive available stock as `onHandQty - reservedQty`.
 - Do not edit completed orders.
+- Do not undo completed sales; create separate reversal records.
 - Do not delete orders, payments, stock movements, reversals, or audit logs.
 - Use Firestore transactions for inventory-changing actions.
 - Keep raw QR tokens out of persistent browser storage; hold them only short-lived in memory and reissue through a callable when needed.
@@ -182,6 +236,33 @@ Implemented callable functions:
 - `recordStockReceipt`
 - `requestInventoryAdjustment`, `approveInventoryAdjustment`, `rejectInventoryAdjustment`
 - `startStockCount`, `submitStockCount`, `approveStockCount`, `rejectStockCount`
+
+## Phase 7 Reversal Functions
+
+Implemented callable functions:
+
+- `getReversalPreview`
+- `createReversalRequest`
+- `approveReversalRequest`
+- `rejectReversalRequest`
+- `cancelReversalRequest`
+- `completeApprovedReversal`
+
+## Phase 8 Reporting Functions
+
+Implemented callable functions:
+
+- `getDashboardSummary`
+- `getSalesReport`
+- `getPaymentReport`
+- `getInventoryReport`
+- `getStockMovementReport`
+- `getReversalReport`
+- `getCreditReport`
+- `getStaffActivityReport`
+- `getLowStockReport`
+- `exportReport`
+- `rebuildReportSummaries`
 
 Implemented scheduled backend function:
 

@@ -44,7 +44,7 @@ completed -> reversed
 partially_reversed -> reversed
 ```
 
-Reversal states remain in the model, but reversal functions are deferred until Phase 7.
+Reversal states are reached only through completed reversal records. They are not direct order edits.
 
 ## Transition Rules
 
@@ -142,6 +142,40 @@ reversed -> completed
 ```
 
 Completed orders cannot be edited. Reversals and corrections must be modeled as separate records and movements.
+
+## Reversal Workflow
+
+Reversal records use their own workflow:
+
+```text
+requested -> approved -> completed
+requested -> rejected
+requested -> cancelled
+```
+
+`createReversalRequest` calculates remaining reversible quantities server-side. `approveReversalRequest` records review metadata but does not mutate stock or finance. `completeApprovedReversal` is the only function that applies stock, valuation, refund, credit, and order-status effects.
+
+Completion rules:
+
+- Full item reversal of all remaining sold quantities sets the order to `reversed`.
+- Partial item reversal sets the order to `partially_reversed`.
+- Refund-only, credit-correction, and correction-note reversals do not change item quantities and leave the order's sale status unchanged.
+- The original order items, payments, release data, stock-out movements, and audit logs remain intact.
+
+Stock returned:
+
+- Increase `onHandQty`.
+- Increase `returnedQty`.
+- Increase `reversedSoldQty`.
+- Record `sale_returned`.
+- Restore inventory value from stock-out cost basis when available.
+
+Stock not returned:
+
+- Do not increase `onHandQty`.
+- Do not increase inventory value.
+- Increase `reversedSoldQty`.
+- Record `sale_reversed_no_stock_return`.
 
 ## QR Token Policy
 

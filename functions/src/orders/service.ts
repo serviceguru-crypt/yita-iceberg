@@ -1307,7 +1307,8 @@ export async function verifyAndCompleteReleaseAction(
       }, { merge: true });
       tx.set(
         adminDb().collection("stockMovements").doc(`${orderRef.id}_stock_out_${item.productId}_${keyHash}`),
-        movementData({
+        {
+          ...movementData({
           branchId: order.branchId,
           productId: item.productId,
           orderId: orderRef.id,
@@ -1318,7 +1319,10 @@ export async function verifyAndCompleteReleaseAction(
           reason: "release_completed",
           actor,
           keyHash,
-        }),
+          }),
+          unitCostKobo: item.quantity > 0 ? Math.floor(removedValueKobo / item.quantity) : 0,
+          inventoryValueImpactKobo: removedValueKobo,
+        },
       );
     }
     const response = safeResponse(orderRef.id, {

@@ -99,6 +99,10 @@ Phase 4 adds transactional callable functions for customers, order reservation, 
 
 Phase 6 adds inventory management callables for product catalog setup, branch product controls, stock receipts, inventory adjustments, and stock counts. Operational inventory documents are separated from protected cost/valuation documents. Product controls and inventory financials are client-read restricted, and all writes remain callable-only.
 
+Phase 7 adds reversal callables for preview, request, approval, rejection, cancellation, and completion. Reversals are callable-only writes. Completion performs stock, valuation, financial, customer credit, order-status, stock movement, and audit changes in one transaction.
+
+Phase 8 adds report callables for dashboard summaries, sales, payments, inventory, stock movements, reversals, credit, staff activity, low stock, CSV export, and manual summary rebuild previews. Report callables are read-only but still enforce authentication, active user profile, role, branch scope, date range, pagination, and sensitive-field restrictions server-side.
+
 Orders use separate fulfilment and payment state:
 
 ```text
@@ -167,6 +171,8 @@ createdAt
 
 Sensitive actions include order creation, order edits, payment confirmation, release completion, cancellation, expiry, reversals, stock adjustment, role assignment, branch assignment, product updates, price updates, and settings changes.
 
+Reversal audit logs are required for request, approval, rejection, cancellation, and completion. They must not contain raw QR tokens or secrets.
+
 ## Idempotency
 
 Inventory-changing and payment-changing functions must accept or derive idempotency keys so retries do not duplicate movements, payments, or status transitions.
@@ -176,6 +182,29 @@ Examples:
 - `createOrder` should avoid double reservations for the same client request.
 - `confirmPayment` should avoid duplicate payment lines on retry.
 - `verifyAndCompleteRelease` should reject or safely return completed state for duplicate release attempts.
+- `completeApprovedReversal` should safely return the original completion response for duplicate completion attempts and must not double-return stock or duplicate refund records.
+
+## Reversal Security
+
+Default Phase 7 role policy:
+
+- Branch managers can request reversals for completed sales in assigned branches.
+- Branch managers can review requests but cannot complete stock/financial effects.
+- Admins and super-admins can request, approve, reject, cancel, and complete reversals.
+- Operational roles can read assigned-branch reversal status but cannot mutate reversals.
+- A branch manager cannot approve their own request. Admin/super-admin self-approval is allowed only with `selfApproved` metadata and audit logging.
+
+Clients cannot directly create, update, or delete `saleReversals`, reversal stock movements, financial transactions, or audit logs. Firestore rules allow only branch-scoped reads. All sensitive mutation is performed by Cloud Functions with server-side role, branch, status, quantity, refund, and credit validation.
+
+Known limitation: Phase 7 records refund intent/impact but does not integrate with external payment rails. Actual cash/bank/POS refund execution remains an operational process outside the app.
+
+## Reporting Security
+
+Report screens do not trust branch IDs selected in the UI. The server resolves the actor from `users/{uid}` and rejects cross-branch or all-branch requests unless the actor is admin/super-admin. Branch managers can access assigned-branch analytics. Operational staff cannot access company financial analytics; they may view limited own-activity/dashboard data where exposed.
+
+Inventory cost, valuation, protected prices, raw payment-proof paths, raw QR tokens, session data, and unrestricted audit payloads are not returned by report callables to unauthorized roles. Payment reports expose proof status only as `proof attached`, `not attached`, or `not required`.
+
+CSV exports are generated from the same callable-enforced report data and are limited to 31 days. Phase 8 returns CSV content directly to the browser and does not create public Storage objects. Firestore `reportExports` metadata and Storage `report-exports/**` are private/denied to clients by default.
 
 ## Environment and Secret Handling
 

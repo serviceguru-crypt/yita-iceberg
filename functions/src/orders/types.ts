@@ -22,7 +22,9 @@ export type StockMovementType =
   | "inventory_increase_adjustment"
   | "inventory_decrease_adjustment"
   | "damage_write_off"
-  | "stock_count_reconciliation";
+  | "stock_count_reconciliation"
+  | "sale_returned"
+  | "sale_reversed_no_stock_return";
 
 export type DiscountApprovalStatus =
   | "not_required"

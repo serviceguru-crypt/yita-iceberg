@@ -85,6 +85,8 @@ partially_reversed
 
 Payment settlement is tracked separately as `paymentStatus: unpaid | paid | credit`. Inventory is reserved only when an order enters `awaiting_payment`. Payment confirmation does not deduct stock. Release verification finalizes the sale by reducing both `reservedQty` and `onHandQty` in one transaction.
 
+Completed sales are corrected through reversal records, not by undoing or deleting the original order. A completed order may later move to `partially_reversed` or `reversed` only after a separate `saleReversals/{reversalId}` record is approved and completed.
+
 ## Inventory Invariants
 
 - `onHandQty` is physical stock currently controlled by the branch.
@@ -109,6 +111,25 @@ Branch inventory is split:
 - `branches/{branchId}/inventoryFinancials/{productId}`: average unit cost and stock value.
 
 Receipts, adjustments, and stock counts are manager/admin workflows. Requests are idempotent and audited. Approval steps perform the stock mutation inside Firestore transactions and write stock movement records.
+
+## Reversal Management
+
+Phase 7 adds controlled sale reversals, partial returns, refund records, and credit corrections. Reversals use a request/review/complete workflow:
+
+```text
+requested -> approved -> completed
+requested -> rejected
+requested -> cancelled
+```
+
+The original order, payments, release metadata, stock-out movements, financial transactions, and audit logs remain immutable. Completion writes new correction records:
+
+- `saleReversals/{reversalId}` for the business correction.
+- `stockMovements` with `sale_returned` or `sale_reversed_no_stock_return`.
+- `financialTransactions` with `sale_refund`, `credit_reduction`, or `reversal_adjustment`.
+- `auditLogs` for request, approval, rejection, cancellation, and completion.
+
+Stock returns increase `onHandQty` and `returnedQty`. No-stock reversals never create physical inventory. `soldQty` remains historical and `reversedSoldQty` records corrected sale quantity.
 
 ## Deployment Plan
 
@@ -140,3 +161,19 @@ The branch provider is shared by the shell. It auto-selects only one-branch oper
 ## Phase 6 Inventory UI Slice
 
 Phase 6 adds operational inventory list/detail screens, branch manager/admin stock receipts, inventory adjustment requests, stock counts, and admin catalog setup. Operational users can view branch stock without cost or valuation. Branch managers can post receipts and request controlled stock changes. Admins approve adjustments/counts and can view valuation panels.
+
+## Phase 7 Reversal UI Slice
+
+Phase 7 adds reversal list, request, detail, and review screens. The create flow loads a server preview for completed or partially reversed orders, displays remaining reversible quantities, and submits a request. Approval and completion actions are role-gated in the UI and enforced again by Cloud Functions.
+
+## Phase 8 Reporting Slice
+
+Phase 8 adds the business intelligence layer. The browser uses callable functions for dashboard summaries, report tables, and CSV export; it does not scan protected business collections directly for analytics. Report callables enforce role, branch, date range, pagination, and filter validation before reading ledgers.
+
+Screen groups:
+
+- Dashboard: role-aware operational summary for today.
+- Sales, payments, reversals, credit, staff activity, stock movement, inventory, and low-stock reports.
+- CSV export generated from the same server-authorized rows shown in the report.
+
+Current aggregation strategy is live bounded reads over indexed ledgers with hard date-range limits. The schema reserves `reportSummaries/{summaryId}` for daily/monthly branch and company summaries; client writes are denied. `rebuildReportSummaries` currently returns a manually generated summary snapshot and is reserved for later scheduled/materialized summary work without starting deployment or scheduler hardening.
