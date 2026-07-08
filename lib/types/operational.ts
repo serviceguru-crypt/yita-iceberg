@@ -26,17 +26,39 @@ export type ProductDocument = {
   id: string;
   sku: string;
   name: string;
+  description?: string | null;
+  categoryId?: string | null;
   unit: string;
-  sellingPriceKobo: number;
+  barcode?: string | null;
+  sellingPriceKobo?: number;
   minimumPriceKobo?: number;
   isActive?: boolean;
 };
 
 export type InventoryDocument = {
   id: string;
+  productId?: string;
+  sku?: string;
+  productName?: string;
+  unit?: string;
   onHandQty: number;
   reservedQty: number;
   soldQty?: number;
+  damagedQty?: number;
+  returnedQty?: number;
+  reorderLevel?: number;
+  isLowStock?: boolean;
+  isActive?: boolean;
+  updatedAt?: unknown;
+  updatedBy?: string;
+};
+
+export type InventoryFinancialDocument = {
+  id: string;
+  productId: string;
+  averageUnitCostKobo: number;
+  stockValueKobo: number;
+  updatedAt?: unknown;
 };
 
 export type CustomerDocument = {
@@ -107,6 +129,89 @@ export type PaymentDocument = {
   receivedBy?: string;
   receivedAt?: unknown;
   status?: string;
+};
+
+export type StockMovementDocument = {
+  id: string;
+  branchId: string;
+  productId: string;
+  movementType: string;
+  quantity: number;
+  onHandBefore: number;
+  onHandAfter: number;
+  reservedBefore: number;
+  reservedAfter: number;
+  reason?: string;
+  performedBy?: string;
+  createdAt?: unknown;
+  orderId?: string;
+  stockReceiptId?: string;
+  adjustmentRequestId?: string;
+  stockCountId?: string;
+};
+
+export type StockReceiptDocument = {
+  id: string;
+  receiptNumber: string;
+  branchId: string;
+  supplierName?: string | null;
+  supplierReference?: string | null;
+  deliveryReference?: string | null;
+  notes?: string | null;
+  items: Array<{
+    productId: string;
+    sku: string;
+    productName: string;
+    quantity: number;
+    unitCostKobo: number;
+    lineValueKobo: number;
+  }>;
+  totalValueKobo: number;
+  status: "posted";
+  receivedBy: string;
+  receivedAt?: unknown;
+};
+
+export type InventoryAdjustmentRequestDocument = {
+  id: string;
+  branchId: string;
+  productId: string;
+  adjustmentType: "increase" | "decrease" | "damage_write_off";
+  quantity: number;
+  unitCostKobo?: number | null;
+  reason: string;
+  supportingReference?: string | null;
+  status: "pending" | "approved" | "rejected";
+  requestedBy: string;
+  requestedAt?: unknown;
+  reviewedBy?: string;
+  reviewedAt?: unknown;
+  reviewReason?: string;
+  postedMovementId?: string;
+};
+
+export type StockCountDocument = {
+  id: string;
+  stockCountNumber: string;
+  branchId: string;
+  status: "open" | "submitted" | "approved" | "rejected" | "expired";
+  productIds: string[];
+  startedBy: string;
+  startedAt?: unknown;
+  submittedBy?: string;
+  submittedAt?: unknown;
+  reviewedBy?: string;
+  reviewedAt?: unknown;
+  reviewReason?: string;
+};
+
+export type StockCountItemDocument = {
+  id: string;
+  productId: string;
+  expectedOnHandQtyAtStart: number;
+  countedQty?: number;
+  differenceQty?: number;
+  status: "pending" | "counted" | "approved" | "rejected";
 };
 
 export function timestampLabel(value: unknown) {

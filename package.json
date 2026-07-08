@@ -16,6 +16,7 @@
     "rules:test": "firebase emulators:exec --only firestore,storage \"vitest run tests/rules\"",
     "bootstrap:super-admin": "tsx scripts/bootstrap-super-admin.ts",
     "seed:test-users": "tsx scripts/create-test-users.ts",
+    "migrate:phase6": "tsx scripts/migrate-phase6-sensitive-fields.ts",
     "deploy": "firebase deploy"
   },
   "dependencies": {

@@ -168,7 +168,7 @@ function OrderFormContent({
       cart.reduce((sum, line) => {
         const product = productMap[line.productId];
         if (!product) return sum;
-        const subtotal = product.sellingPriceKobo * line.quantity;
+        const subtotal = (product.sellingPriceKobo ?? 0) * line.quantity;
         return sum + subtotal - Math.floor((subtotal * line.discountPercent) / 100);
       }, 0),
     [cart, productMap],

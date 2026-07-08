@@ -43,21 +43,41 @@ branches/{branchId}/products/{productId}
   productId
   sku
   name
+  description
+  categoryId
   unit
+  barcode
   sellingPriceKobo
-  costPriceKobo
-  minimumPriceKobo
-  reorderLevel
   isActive
   updatedAt
+  updatedBy
+
+branches/{branchId}/productControls/{productId}
+  productId
+  minimumPriceKobo
+  defaultCostPriceKobo
+  updatedAt
+  updatedBy
 
 branches/{branchId}/inventory/{productId}
   productId
+  sku
+  productName
+  unit
   onHandQty
   reservedQty
   soldQty
   damagedQty
   returnedQty
+  reorderLevel
+  isLowStock
+  isActive
+  updatedAt
+  updatedBy
+
+branches/{branchId}/inventoryFinancials/{productId}
+  productId
+  averageUnitCostKobo
   stockValueKobo
   updatedAt
   updatedBy
@@ -133,6 +153,9 @@ stockMovements/{movementId}
   branchId
   productId
   orderId
+  stockReceiptId
+  adjustmentRequestId
+  stockCountId
   movementType
   quantity
   onHandBefore
@@ -143,6 +166,64 @@ stockMovements/{movementId}
   performedBy
   createdAt
   idempotencyKeyHash
+
+stockReceipts/{receiptId}
+  receiptNumber
+  branchId
+  supplierName
+  supplierReference
+  deliveryReference
+  notes
+  items[]
+  totalValueKobo
+  status
+  receivedBy
+  receivedAt
+  createdBy
+  createdAt
+  idempotencyKeyHash
+
+inventoryAdjustmentRequests/{requestId}
+  branchId
+  productId
+  adjustmentType
+  quantity
+  unitCostKobo
+  reason
+  supportingReference
+  status
+  requestedBy
+  requestedAt
+  reviewedBy
+  reviewedAt
+  reviewReason
+  postedMovementId
+  idempotencyKeyHash
+
+stockCounts/{stockCountId}
+  stockCountNumber
+  branchId
+  status
+  productIds
+  startedBy
+  startedAt
+  submittedBy
+  submittedAt
+  reviewedBy
+  reviewedAt
+  reviewReason
+  createdAt
+  updatedAt
+  idempotencyKeyHash
+
+stockCounts/{stockCountId}/items/{productId}
+  productId
+  expectedOnHandQtyAtStart
+  countedQty
+  differenceQty
+  status
+  countedBy
+  countedAt
 
 saleReversals/{reversalId}
   orderId
@@ -257,6 +338,11 @@ reservation_created
 reservation_adjusted
 reservation_released
 stock_out
+stock_received
+inventory_increase_adjustment
+inventory_decrease_adjustment
+damage_write_off
+stock_count_reconciliation
 ```
 
 The stock movement ledger is append-only. Corrections create new movement records instead of editing or deleting historical entries.
@@ -276,3 +362,20 @@ Operational screens use bounded branch-scoped reads:
 - Customer reads are limited to active customers in the selected branch.
 
 `paymentProofUploadIntents` is a server-owned collection. Clients do not read or write it directly; callable functions create and consume intents.
+
+## Phase 6 Inventory Notes
+
+`branches/{branchId}/inventory/{productId}` is operational only and must not contain cost, protected minimum price, or valuation fields. Cost and valuation are split into:
+
+- `branches/{branchId}/productControls/{productId}` for protected price/cost controls.
+- `branches/{branchId}/inventoryFinancials/{productId}` for average cost and stock value.
+
+Stock receipts are immutable once posted and update weighted average cost:
+
+```text
+newAverageUnitCostKobo = floor((previousStockValueKobo + receiptLineValueKobo) / newOnHandQty)
+```
+
+Stock-outs and approved decreases remove value using the current average unit cost. Removing all remaining stock removes the entire remaining stock value to avoid rounding residue.
+
+Inventory adjustments are request/review workflows. A request never mutates stock. Approval mutates stock and financials transactionally. Stock count approval is rejected if current `onHandQty` no longer matches the count's captured expected quantity, forcing a fresh count instead of reconciling stale data.

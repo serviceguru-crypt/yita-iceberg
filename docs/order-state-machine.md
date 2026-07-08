@@ -103,6 +103,7 @@ Triggered by `verifyAndCompleteRelease`.
   - reduce `reservedQty`
   - reduce `onHandQty`
   - increase `soldQty`
+  - reduce `inventoryFinancials.stockValueKobo` using current average unit cost
   - create `stock_out` movement records
   - mark order `completed`
   - save release actor and server timestamp
@@ -151,6 +152,8 @@ Only the token hash is stored. The raw token is returned only to the authorized 
 Phase 5 adds `reissueOrderQrToken` for secure reprints while an order is unpaid. Reissue increments `qrTokenVersion`, replaces `qrTokenHash`, invalidates the previous QR token, and records an audit log without storing the raw token.
 
 Release QR preview uses `validateReleaseQr`. It validates the token hash and branch access server-side, returns only minimal release data, and does not mutate inventory or order status.
+
+Phase 6 keeps raw QR tokens out of persistent browser storage. The frontend holds tokens only in short-lived module memory for immediate print/release flows. If memory is gone, a new token must be issued by `reissueOrderQrToken`.
 
 ## Phase 5 Receipt Points
 

@@ -48,6 +48,18 @@ const navItems: NavItem[] = [
     enabled: true,
   },
   {
+    href: "/inventory",
+    label: "Inventory",
+    roles: ["order_registrar", "cashier", "release_verifier", "branch_manager", "admin", "super_admin"],
+    enabled: true,
+  },
+  {
+    href: "/catalog/products",
+    label: "Product catalog",
+    roles: ["admin", "super_admin"],
+    enabled: true,
+  },
+  {
     href: "/profile",
     label: "Access management",
     roles: ["admin", "super_admin"],

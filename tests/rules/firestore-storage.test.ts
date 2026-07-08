@@ -67,6 +67,28 @@ async function seedBaseData() {
         createdBy: "seed",
         updatedBy: "seed",
       }),
+      setDoc(doc(db, "users/release-a"), {
+        displayName: "Release A",
+        email: "release-a@example.test",
+        isActive: true,
+        platformRole: "release_verifier",
+        assignedBranchIds: ["branch-a"],
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        createdBy: "seed",
+        updatedBy: "seed",
+      }),
+      setDoc(doc(db, "users/manager-a"), {
+        displayName: "Manager A",
+        email: "manager-a@example.test",
+        isActive: true,
+        platformRole: "branch_manager",
+        assignedBranchIds: ["branch-a"],
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        createdBy: "seed",
+        updatedBy: "seed",
+      }),
       setDoc(doc(db, "branches/branch-a"), {
         name: "Branch A",
         isActive: true,
@@ -79,10 +101,47 @@ async function seedBaseData() {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       }),
+      setDoc(doc(db, "products/product-1"), {
+        sku: "SKU-1",
+        name: "Product 1",
+        unit: "bag",
+        isActive: true,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }),
+      setDoc(doc(db, "branches/branch-a/products/product-1"), {
+        productId: "product-1",
+        sku: "SKU-1",
+        name: "Product 1",
+        unit: "bag",
+        sellingPriceKobo: 100000,
+        isActive: true,
+        updatedAt: serverTimestamp(),
+        updatedBy: "seed",
+      }),
       setDoc(doc(db, "branches/branch-a/inventory/product-1"), {
         productId: "product-1",
+        sku: "SKU-1",
+        productName: "Product 1",
+        unit: "bag",
         onHandQty: 10,
         reservedQty: 0,
+        reorderLevel: 2,
+        isLowStock: false,
+        updatedAt: serverTimestamp(),
+        updatedBy: "seed",
+      }),
+      setDoc(doc(db, "branches/branch-a/productControls/product-1"), {
+        productId: "product-1",
+        minimumPriceKobo: 90000,
+        defaultCostPriceKobo: 60000,
+        updatedAt: serverTimestamp(),
+        updatedBy: "seed",
+      }),
+      setDoc(doc(db, "branches/branch-a/inventoryFinancials/product-1"), {
+        productId: "product-1",
+        averageUnitCostKobo: 60000,
+        stockValueKobo: 600000,
         updatedAt: serverTimestamp(),
         updatedBy: "seed",
       }),
@@ -97,6 +156,60 @@ async function seedBaseData() {
         branchId: "branch-a",
         status: "awaiting_payment",
         createdAt: serverTimestamp(),
+      }),
+      setDoc(doc(db, "stockMovements/movement-a"), {
+        branchId: "branch-a",
+        productId: "product-1",
+        movementType: "stock_received",
+        quantity: 10,
+        onHandBefore: 0,
+        onHandAfter: 10,
+        reservedBefore: 0,
+        reservedAfter: 0,
+        createdAt: serverTimestamp(),
+      }),
+      setDoc(doc(db, "stockReceipts/receipt-a"), {
+        receiptNumber: "SR-A",
+        branchId: "branch-a",
+        items: [
+          {
+            productId: "product-1",
+            sku: "SKU-1",
+            productName: "Product 1",
+            quantity: 10,
+            unitCostKobo: 60000,
+            lineValueKobo: 600000,
+          },
+        ],
+        totalValueKobo: 600000,
+        status: "posted",
+        receivedBy: "manager-a",
+        receivedAt: serverTimestamp(),
+      }),
+      setDoc(doc(db, "inventoryAdjustmentRequests/adjustment-a"), {
+        branchId: "branch-a",
+        productId: "product-1",
+        adjustmentType: "increase",
+        quantity: 1,
+        unitCostKobo: 60000,
+        reason: "Opening balance correction",
+        status: "pending",
+        requestedBy: "manager-a",
+        requestedAt: serverTimestamp(),
+      }),
+      setDoc(doc(db, "stockCounts/count-a"), {
+        stockCountNumber: "SC-A",
+        branchId: "branch-a",
+        status: "open",
+        productIds: ["product-1"],
+        startedBy: "manager-a",
+        startedAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+      }),
+      setDoc(doc(db, "stockCounts/count-a/items/product-1"), {
+        productId: "product-1",
+        expectedOnHandQtyAtStart: 10,
+        status: "pending",
       }),
       setDoc(doc(db, "paymentProofUploadIntents/payment-a"), {
         paymentId: "payment-a",
@@ -158,11 +271,48 @@ describe("Firestore branch access rules", () => {
   it("allows assigned-branch inventory reads", async () => {
     const db = testEnv.authenticatedContext("registrar-a").firestore();
     await assertSucceeds(getDoc(doc(db, "branches/branch-a/inventory/product-1")));
+    await assertSucceeds(getDoc(doc(db, "branches/branch-a/products/product-1")));
+    await assertSucceeds(getDoc(doc(db, "stockMovements/movement-a")));
   });
 
   it("blocks cross-branch inventory reads", async () => {
     const db = testEnv.authenticatedContext("registrar-a").firestore();
     await assertFails(getDoc(doc(db, "branches/branch-b/inventory/product-1")));
+  });
+
+  it("keeps protected cost, pricing controls, and global catalog admin-only", async () => {
+    const registrarDb = testEnv.authenticatedContext("registrar-a").firestore();
+    const cashierDb = testEnv.authenticatedContext("cashier-a").firestore();
+    const releaseDb = testEnv.authenticatedContext("release-a").firestore();
+    const managerDb = testEnv.authenticatedContext("manager-a").firestore();
+    const adminDb = testEnv.authenticatedContext("admin-user").firestore();
+
+    await assertFails(getDoc(doc(registrarDb, "branches/branch-a/productControls/product-1")));
+    await assertFails(getDoc(doc(cashierDb, "branches/branch-a/inventoryFinancials/product-1")));
+    await assertFails(getDoc(doc(releaseDb, "products/product-1")));
+    await assertFails(getDoc(doc(managerDb, "branches/branch-a/productControls/product-1")));
+    await assertFails(getDoc(doc(managerDb, "branches/branch-a/inventoryFinancials/product-1")));
+
+    await assertSucceeds(getDoc(doc(adminDb, "products/product-1")));
+    await assertSucceeds(getDoc(doc(adminDb, "branches/branch-a/productControls/product-1")));
+    await assertSucceeds(getDoc(doc(adminDb, "branches/branch-a/inventoryFinancials/product-1")));
+  });
+
+  it("limits receipt, adjustment, and stock count reads to managers and admins", async () => {
+    const registrarDb = testEnv.authenticatedContext("registrar-a").firestore();
+    const managerDb = testEnv.authenticatedContext("manager-a").firestore();
+    const adminDb = testEnv.authenticatedContext("admin-user").firestore();
+
+    await assertFails(getDoc(doc(registrarDb, "stockReceipts/receipt-a")));
+    await assertFails(getDoc(doc(registrarDb, "inventoryAdjustmentRequests/adjustment-a")));
+    await assertFails(getDoc(doc(registrarDb, "stockCounts/count-a")));
+    await assertFails(getDoc(doc(registrarDb, "stockCounts/count-a/items/product-1")));
+
+    await assertSucceeds(getDoc(doc(managerDb, "stockReceipts/receipt-a")));
+    await assertSucceeds(getDoc(doc(managerDb, "inventoryAdjustmentRequests/adjustment-a")));
+    await assertSucceeds(getDoc(doc(managerDb, "stockCounts/count-a")));
+    await assertSucceeds(getDoc(doc(managerDb, "stockCounts/count-a/items/product-1")));
+    await assertSucceeds(getDoc(doc(adminDb, "stockReceipts/receipt-a")));
   });
 
   it("blocks direct inventory writes", async () => {
@@ -173,6 +323,27 @@ describe("Firestore branch access rules", () => {
         onHandQty: 5,
       }),
     );
+  });
+
+  it("blocks client writes to catalog, protected inventory, and control documents", async () => {
+    const db = testEnv.authenticatedContext("admin-user").firestore();
+
+    await assertFails(setDoc(doc(db, "products/product-2"), { sku: "SKU-2", name: "Product 2" }));
+    await assertFails(setDoc(doc(db, "branches/branch-a/products/product-1"), { sellingPriceKobo: 1 }));
+    await assertFails(setDoc(doc(db, "branches/branch-a/productControls/product-1"), { minimumPriceKobo: 1 }));
+    await assertFails(setDoc(doc(db, "branches/branch-a/inventoryFinancials/product-1"), { stockValueKobo: 1 }));
+    await assertFails(setDoc(doc(db, "productUniqueSkus/sku-2"), { productId: "product-2" }));
+    await assertFails(setDoc(doc(db, "productUniqueBarcodes/bar-2"), { productId: "product-2" }));
+  });
+
+  it("blocks client writes to inventory operation ledgers", async () => {
+    const db = testEnv.authenticatedContext("manager-a").firestore();
+
+    await assertFails(setDoc(doc(db, "stockReceipts/receipt-b"), { branchId: "branch-a" }));
+    await assertFails(setDoc(doc(db, "inventoryAdjustmentRequests/adjustment-b"), { branchId: "branch-a" }));
+    await assertFails(setDoc(doc(db, "stockCounts/count-b"), { branchId: "branch-a" }));
+    await assertFails(setDoc(doc(db, "stockCounts/count-a/items/product-1"), { countedQty: 10 }));
+    await assertFails(setDoc(doc(db, "stockMovements/movement-b"), { branchId: "branch-a" }));
   });
 
   it("blocks direct order creation or edits", async () => {

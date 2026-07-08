@@ -95,6 +95,20 @@ Payment settlement is tracked separately as `paymentStatus: unpaid | paid | cred
 - Inventory changes must produce stock movement records.
 - Sensitive inventory changes must produce audit logs.
 - The frontend cannot directly update inventory documents.
+- Operational inventory quantity data is separated from protected cost and valuation data.
+- Weighted average cost is updated by stock receipts and stock increases.
+- Stock-outs, damage write-offs, decreases, and negative count reconciliations reduce value using the current average unit cost.
+
+## Inventory Management
+
+Global catalog records live in `products/{productId}` and are managed by admin/super-admin users. Branch sellable records live in `branches/{branchId}/products/{productId}` and contain only operational product data plus selling price. Protected branch controls live in `branches/{branchId}/productControls/{productId}` and are writable only through callables.
+
+Branch inventory is split:
+
+- `branches/{branchId}/inventory/{productId}`: operational quantities, low-stock state, SKU/name/unit snapshot.
+- `branches/{branchId}/inventoryFinancials/{productId}`: average unit cost and stock value.
+
+Receipts, adjustments, and stock counts are manager/admin workflows. Requests are idempotent and audited. Approval steps perform the stock mutation inside Firestore transactions and write stock movement records.
 
 ## Deployment Plan
 
@@ -122,3 +136,7 @@ Screen groups:
 - Release verifier: awaiting-release queue, QR payload validation, manual verification fallback, completed-sale confirmation.
 
 The branch provider is shared by the shell. It auto-selects only one-branch operational users, preserves explicit branch preference locally, and requires admin/super-admin selection before operational activity. The backend treats this branch as an untrusted hint and repeats role and branch checks.
+
+## Phase 6 Inventory UI Slice
+
+Phase 6 adds operational inventory list/detail screens, branch manager/admin stock receipts, inventory adjustment requests, stock counts, and admin catalog setup. Operational users can view branch stock without cost or valuation. Branch managers can post receipts and request controlled stock changes. Admins approve adjustments/counts and can view valuation panels.

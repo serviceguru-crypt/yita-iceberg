@@ -41,6 +41,10 @@ service cloud.firestore {
         || (activeUser() && branchId in currentUser().assignedBranchIds);
     }
 
+    function canManageInventoryFor(branchId) {
+      return isAdmin() || isBranchManagerFor(branchId);
+    }
+
     function orderBranch(orderId) {
       return get(/databases/$(database)/documents/orders/$(orderId)).data.branchId;
     }
@@ -63,11 +67,29 @@ service cloud.firestore {
         allow read: if hasBranchAccess(branchId);
         allow write: if false;
       }
+
+      match /productControls/{productId} {
+        allow read: if isAdmin();
+        allow write: if false;
+      }
+
+      match /inventoryFinancials/{productId} {
+        allow read: if isAdmin();
+        allow write: if false;
+      }
     }
 
     match /products/{productId} {
-      allow read: if activeUser();
+      allow read: if isAdmin();
       allow write: if false;
+    }
+
+    match /productUniqueSkus/{sku} {
+      allow read, write: if false;
+    }
+
+    match /productUniqueBarcodes/{barcode} {
+      allow read, write: if false;
     }
 
     match /customers/{customerId} {
@@ -88,6 +110,26 @@ service cloud.firestore {
     match /stockMovements/{movementId} {
       allow read: if activeUser() && hasBranchAccess(resource.data.branchId);
       allow write: if false;
+    }
+
+    match /stockReceipts/{receiptId} {
+      allow read: if canManageInventoryFor(resource.data.branchId);
+      allow write: if false;
+    }
+
+    match /inventoryAdjustmentRequests/{requestId} {
+      allow read: if canManageInventoryFor(resource.data.branchId);
+      allow write: if false;
+    }
+
+    match /stockCounts/{stockCountId} {
+      allow read: if canManageInventoryFor(resource.data.branchId);
+      allow write: if false;
+
+      match /items/{productId} {
+        allow read: if canManageInventoryFor(get(/databases/$(database)/documents/stockCounts/$(stockCountId)).data.branchId);
+        allow write: if false;
+      }
     }
 
     match /financialTransactions/{transactionId} {

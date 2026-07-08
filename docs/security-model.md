@@ -61,6 +61,8 @@ Firestore rules should be least privilege:
 
 - Users may read their own user profile.
 - Branch users may read assigned branch metadata, branch products, branch inventory summaries, and relevant branch orders needed for their role.
+- Operational users may not read protected minimum prices, default costs, average unit cost, stock value, stock receipts, or adjustment records with cost data.
+- Branch managers/admins may read inventory operation records needed for receipts, adjustments, and stock counts.
 - Direct writes to orders, payments, inventory, stock movements, reversals, audit logs, roles, and branch settings should be denied from the client except for carefully reviewed non-sensitive fields if ever needed.
 - Audit logs and stock movements are append-only from trusted server code.
 - Admin and super admin reads are broader but still authenticated and active.
@@ -95,6 +97,8 @@ Phase 3 callable functions are limited to identity and access management:
 
 Phase 4 adds transactional callable functions for customers, order reservation, payment confirmation, discount approval, release verification, and stale-order expiry. All money is stored as integer kobo. Direct client writes remain denied for orders, payments, financial transactions, inventory, stock movements, audit logs, branch pricing, and idempotency records.
 
+Phase 6 adds inventory management callables for product catalog setup, branch product controls, stock receipts, inventory adjustments, and stock counts. Operational inventory documents are separated from protected cost/valuation documents. Product controls and inventory financials are client-read restricted, and all writes remain callable-only.
+
 Orders use separate fulfilment and payment state:
 
 ```text
@@ -126,7 +130,19 @@ Phase 5 enforces a server-issued upload-intent pattern:
 
 Order QR payloads use `YITA1|orderNumber|rawToken`. The payload does not include customer, price, payment, branch address, or staff details. Firestore stores only `qrTokenHash` and `qrTokenVersion`.
 
-The raw token is returned only from `createOrder` or `reissueOrderQrToken`, held in session storage for immediate printing, and never placed in URLs. `validateReleaseQr` provides a read-only release preview, while `verifyAndCompleteRelease` performs the final idempotent mutation.
+The raw token is returned only from `createOrder` or `reissueOrderQrToken`, held only in short-lived in-memory browser state for immediate printing, and never placed in URLs, `sessionStorage`, or `localStorage`. If the slip must be printed again after that memory state is gone, the app calls `reissueOrderQrToken`, which rotates the hash and invalidates the previous QR token. `validateReleaseQr` provides a read-only release preview, while `verifyAndCompleteRelease` performs the final idempotent mutation.
+
+## Inventory Security
+
+The browser never writes catalog, branch product, inventory, product control, financial, receipt, adjustment, stock count, movement, or audit documents directly. All inventory-changing actions must:
+
+1. Confirm actor role and branch access.
+2. Read the current product/inventory/control records server-side.
+3. Reject stale or invalid states.
+4. Mutate operational quantity and protected valuation documents in the same transaction.
+5. Write stock movements, audit logs, and idempotency records.
+
+Stock receipt and increase-adjustment unit costs are restricted to branch manager/admin workflows. Admin users can inspect valuation data; operational POS users see only product, quantity, reserved, available, and low-stock information.
 
 ## App Check
 

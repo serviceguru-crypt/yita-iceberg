@@ -12,9 +12,7 @@ Inventory is reserved when an order is created. Stock is only finally deducted w
 
 ## Current Project Status
 
-This repository was inspected on 2026-07-06. It is a fresh Git repository with no application files, package manager metadata, Firebase configuration, or existing source code.
-
-Phase 1 creates the architecture documentation only. Application scaffolding starts in Phase 2.
+Phase 6 is implemented: the app now has authenticated operational screens, the three-step POS flow, branch inventory views, product catalog setup, stock receipts, adjustment requests, stock counts, protected valuation documents, and emulator-backed tests.
 
 ## Target Stack
 
@@ -73,9 +71,10 @@ npm run functions:test
 npm run functions:typecheck
 npm run functions:lint
 npm run functions:build
+npm run migrate:phase6
 ```
 
-Phase 4/5 backend functions are covered by `npm run functions:test`, which runs against the Auth, Firestore, and Storage emulators. Firestore and Storage access rules are covered by `npm run rules:test`.
+Phase 4-6 backend functions are covered by `npm run functions:test`, which runs against the Auth, Firestore, and Storage emulators. Firestore and Storage access rules are covered by `npm run rules:test`.
 
 ## Phase 5 Operational UI
 
@@ -98,6 +97,29 @@ End-to-end emulator checklist:
 6. Confirm the order becomes `completed` and inventory is deducted only at release.
 
 Frontend idempotency keys are generated once per intentional action and sent to callable functions. Browser totals are informative only; Cloud Functions return the authoritative state. Printable order slips, payment receipts, and release confirmations use browser print CSS.
+
+## Phase 6 Inventory UI
+
+Implemented inventory routes:
+
+- `/inventory`, `/inventory/[productId]`
+- `/inventory/receipts`, `/inventory/receipts/new`, `/inventory/receipts/[receiptId]`
+- `/inventory/adjustments`, `/inventory/adjustments/new`, `/inventory/adjustments/[requestId]`
+- `/inventory/counts`, `/inventory/counts/new`, `/inventory/counts/[stockCountId]`
+- `/catalog/products`, `/catalog/products/new`, `/catalog/products/[productId]`
+- `/catalog/branch-products`
+
+Operational inventory is separated from protected finance data. Branch users can read branch inventory quantities and branch product selling prices. Protected minimum prices, default cost, average unit cost, and stock value live in `productControls` and `inventoryFinancials`; client reads are limited to admins where appropriate, and inventory operation documents with cost data are limited to branch managers/admins.
+
+Stock receipts use weighted-average valuation. Stock-outs at release reduce inventory value using the current average unit cost. Adjustment approvals and stock count approvals are transactional, audited, idempotent, and cannot break existing reservations.
+
+Run the Phase 6 migration only after reviewing existing data:
+
+```bash
+PHASE6_MIGRATION_CONFIRM=true npm run migrate:phase6
+```
+
+For production, also set Firebase Admin credentials and `PHASE6_ALLOW_PRODUCTION=true`. The script refuses production execution without that explicit override.
 
 ## Super-Admin Bootstrap
 
@@ -123,12 +145,14 @@ The script creates the Firebase Auth user without logging secrets. Set or reset 
 
 - Do not trust client-sent role, branch, price, quantity, discount, payment status, or order status.
 - Do not allow direct client inventory writes.
+- Do not expose cost, valuation, or protected minimum price fields to operational roles.
 - Do not allow negative inventory.
 - Store monetary values as integer kobo.
 - Derive available stock as `onHandQty - reservedQty`.
 - Do not edit completed orders.
 - Do not delete orders, payments, stock movements, reversals, or audit logs.
 - Use Firestore transactions for inventory-changing actions.
+- Keep raw QR tokens out of persistent browser storage; hold them only short-lived in memory and reissue through a callable when needed.
 - Write immutable audit logs for every sensitive action.
 - Keep branch stock isolated by branch.
 
@@ -148,6 +172,16 @@ Implemented callable functions:
 - `createPaymentProofUploadIntent`
 - `reissueOrderQrToken`
 - `validateReleaseQr`
+
+## Phase 6 Inventory Functions
+
+Implemented callable functions:
+
+- `createProduct`, `updateProduct`, `archiveProduct`
+- `addBranchProduct`, `updateBranchProductSettings`, `updateBranchProductPricing`
+- `recordStockReceipt`
+- `requestInventoryAdjustment`, `approveInventoryAdjustment`, `rejectInventoryAdjustment`
+- `startStockCount`, `submitStockCount`, `approveStockCount`, `rejectStockCount`
 
 Implemented scheduled backend function:
 
