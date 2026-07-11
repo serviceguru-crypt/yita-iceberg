@@ -46,6 +46,19 @@ npm run deploy:functions:staging
 
 Create/connect the App Hosting backend in Firebase Console or Google Cloud, point it at the staging branch, and configure staging environment variables from `.env.staging.example`.
 
+After the staging app and functions are available, seed the minimum smoke-test data:
+
+```bash
+APP_ENV=staging \
+FIREBASE_PROJECT_ID=yita-iceberg-staging \
+STAGING_SEED_CONFIRM=true \
+STAGING_SEED_DRY_RUN=false \
+STAGING_SEED_PASSWORD="<temporary-staging-password>" \
+npm run seed:staging-smoke -- --apply
+```
+
+The staging seed script is dry-run by default and refuses production-looking targets.
+
 ## Production Deploy
 
 Production deploys must be manual, from `main` or a release tag, after staging smoke tests pass.

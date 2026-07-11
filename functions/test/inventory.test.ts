@@ -157,6 +157,31 @@ describe("inventory product and branch setup", () => {
     ).rejects.toMatchObject({ code: "already-exists" });
   });
 
+  it("auto-generates SKU when product creation omits one", async () => {
+    const first = await createProductAction("admin", {
+      name: "Auto A",
+      unit: "piece",
+      idempotencyKey: "idem-product-auto-a",
+    }) as { productId: string; qrCodePayload: string; sku: string };
+    const second = await createProductAction("admin", {
+      name: "Auto B",
+      unit: "piece",
+      idempotencyKey: "idem-product-auto-b",
+    }) as { productId: string; qrCodePayload: string; sku: string };
+
+    expect(first.sku).toBe("YI-000001");
+    expect(first.qrCodePayload).toBe(`YITA-PRODUCT|${first.productId}|YI-000001`);
+    expect(second.sku).toBe("YI-000002");
+
+    const db = getFirestore();
+    const firstProduct = await db.doc(`products/${first.productId}`).get();
+    const firstUniqueSku = await db.doc("productUniqueSkus/yi-000001").get();
+
+    expect(firstProduct.data()?.sku).toBe("YI-000001");
+    expect(firstProduct.data()?.qrCodePayload).toBe(first.qrCodePayload);
+    expect(firstUniqueSku.data()?.productId).toBe(first.productId);
+  });
+
   it("adds a branch product with zero stock and protected controls", async () => {
     const productId = await createBranchProduct();
     const db = getFirestore();

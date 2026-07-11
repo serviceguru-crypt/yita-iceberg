@@ -44,6 +44,14 @@ function normalize(value: string) {
   return value.trim().toLowerCase();
 }
 
+function formatGeneratedSku(sequence: number) {
+  return `YI-${String(sequence).padStart(6, "0")}`;
+}
+
+function productQrPayload(productId: string, sku: string) {
+  return `YITA-PRODUCT|${productId}|${sku}`;
+}
+
 function idemRef(actor: ActorProfile, operation: string, idempotencyKey: string) {
   const keyHash = hashValue(idempotencyKey);
   return {
@@ -210,6 +218,40 @@ async function ensureUniqueProductFields(
   }
 }
 
+async function generateAvailableSku(tx: FirebaseFirestore.Transaction) {
+  const counterRef = adminDb().doc("counters/productSku");
+  const counterSnapshot = await tx.get(counterRef);
+  const startingSequence =
+    typeof counterSnapshot.data()?.nextSequence === "number"
+      ? Number(counterSnapshot.data()?.nextSequence)
+      : 1;
+  const candidates = Array.from({ length: 20 }, (_, index) => {
+    const sequence = startingSequence + index;
+
+    return {
+      sequence,
+      sku: formatGeneratedSku(sequence),
+      uniqueRef: adminDb().doc(`productUniqueSkus/${normalize(formatGeneratedSku(sequence))}`),
+    };
+  });
+  const snapshots = await Promise.all(
+    candidates.map((candidate) => tx.get(candidate.uniqueRef)),
+  );
+  const availableIndex = snapshots.findIndex((snapshot) => !snapshot.exists);
+
+  if (availableIndex === -1) {
+    throw new HttpsError("resource-exhausted", "Unable to reserve a product SKU.");
+  }
+
+  const chosen = candidates[availableIndex];
+
+  return {
+    sku: chosen.sku,
+    nextSequence: chosen.sequence + 1,
+    counterRef,
+  };
+}
+
 export async function createProductAction(actorUid: string | undefined, input: unknown) {
   const actor = await requireActor(actorUid);
   ensureRole(actor, ["admin", "super_admin"]);
@@ -221,14 +263,23 @@ export async function createProductAction(actorUid: string | undefined, input: u
     const existing = await tx.get(ref);
     if (existing.exists) return existing.data()?.responseSnapshot;
 
-    await ensureUniqueProductFields(tx, productRef.id, data.sku, data.barcode);
+    const generated = data.sku ? null : await generateAvailableSku(tx);
+    const sku = data.sku ?? generated?.sku;
+
+    if (!sku) {
+      throw new HttpsError("internal", "Unable to generate product SKU.");
+    }
+
+    await ensureUniqueProductFields(tx, productRef.id, sku, data.barcode);
+    const qrCodePayload = productQrPayload(productRef.id, sku);
     const product = {
-      sku: data.sku,
+      sku,
       name: data.name,
       unit: data.unit,
       description: data.description ?? null,
       categoryId: data.categoryId ?? null,
       barcode: data.barcode ?? null,
+      qrCodePayload,
       isActive: true,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
@@ -236,9 +287,15 @@ export async function createProductAction(actorUid: string | undefined, input: u
       updatedBy: actor.uid,
       idempotencyKeyHash: keyHash,
     };
-    const response = { id: productRef.id, productId: productRef.id };
+    const response = { id: productRef.id, productId: productRef.id, sku, qrCodePayload };
 
     tx.set(productRef, product);
+    if (generated) {
+      tx.set(generated.counterRef, {
+        nextSequence: generated.nextSequence,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
     tx.set(adminDb().collection("auditLogs").doc(`createProduct_${productRef.id}_${keyHash}`), auditData(actor, "product.created", "product", productRef.id, null, null, product));
     tx.set(ref, { actorId: actor.uid, operation: "createProduct", keyHash, entityId: productRef.id, responseSnapshot: response, createdAt: FieldValue.serverTimestamp() });
     return response;

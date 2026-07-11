@@ -45,6 +45,7 @@ FIREBASE_PROJECT_ID
 FIREBASE_CLIENT_EMAIL
 FIREBASE_PRIVATE_KEY
 FIREBASE_SERVICE_ACCOUNT_JSON
+FIREBASE_SERVICE_ACCOUNT_FILE
 FIREBASE_STORAGE_BUCKET
 SESSION_COOKIE_NAME
 SESSION_COOKIE_MAX_AGE_DAYS
@@ -56,6 +57,9 @@ MAX_DETAIL_REPORT_DAYS
 ```
 
 Production fails closed if `APP_BASE_URL` or Firebase Admin credentials are missing in server contexts.
+For local development against a real Firebase project, prefer `FIREBASE_SERVICE_ACCOUNT_FILE`
+pointing to a JSON key stored outside the repository, for example
+`/home/aliyu/.config/yita-iceberg/firebase-admin-key.json`.
 
 ## App Check Rollout
 

@@ -127,10 +127,12 @@ export async function provisionUserAction(actorUid: string | undefined, input: u
       passwordResetRequired: true,
     },
   });
+  const inviteLink = await adminAuth().generatePasswordResetLink(data.email);
 
   return {
     uid: authUser.uid,
     passwordResetRequired: true,
+    inviteLink,
   };
 }
 

@@ -1,19 +1,29 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { type ComponentType, type SVGProps, useEffect, useMemo, useState } from "react";
 import {
+  IconCash,
+  IconClipboardList,
   IconDownload,
   IconRefresh,
   IconChartBar,
   IconAlertTriangle,
+  IconBuildingStore,
+  IconDiamond,
+  IconLockAccess,
+  IconPackage,
+  IconReceiptRefund,
+  IconReportAnalytics,
+  IconShieldCheck,
+  IconUsers,
 } from "@tabler/icons-react";
 
 import { useBranchContext } from "@/components/branch/branch-context";
 import { Field } from "@/components/shared/field";
 import { OperationState } from "@/components/shared/operation-state";
 import { Button } from "@/components/ui/button";
-import { isAdminRole } from "@/lib/domain/roles";
+import { isAdminRole, type PlatformRole } from "@/lib/domain/roles";
 import { callFunction } from "@/lib/firebase/callables";
 import { formatNairaFromKobo } from "@/lib/format/number";
 import type {
@@ -29,6 +39,14 @@ type ReportConfig = {
   functionName: string;
   columns: Array<{ key: string; label: string; money?: boolean; hideWhenNotSensitive?: boolean }>;
   metrics: Array<{ key: string; label: string; money?: boolean }>;
+};
+
+type WorkflowCard = {
+  href: string;
+  title: string;
+  description: string;
+  roles: PlatformRole[];
+  icon: ComponentType<SVGProps<SVGSVGElement>>;
 };
 
 const today = new Date().toISOString().slice(0, 10);
@@ -203,6 +221,79 @@ export const reportConfigs: Record<Exclude<ReportType, "dashboard">, ReportConfi
   },
 };
 
+const workflowCards: WorkflowCard[] = [
+  {
+    href: "/orders",
+    title: "Order registration",
+    description: "Create, edit, cancel, and reissue order slips before payment.",
+    roles: ["order_registrar", "branch_manager", "admin", "super_admin"],
+    icon: IconClipboardList,
+  },
+  {
+    href: "/customers",
+    title: "Customers",
+    description: "Register customer details used across orders, payments, and credit records.",
+    roles: ["order_registrar", "cashier", "branch_manager", "admin", "super_admin"],
+    icon: IconUsers,
+  },
+  {
+    href: "/cashier",
+    title: "Payments",
+    description: "Verify orders, collect payments, record methods, and issue receipts.",
+    roles: ["cashier", "branch_manager", "admin", "super_admin"],
+    icon: IconCash,
+  },
+  {
+    href: "/release",
+    title: "Release verification",
+    description: "Confirm payment validity and complete the final stock-out release step.",
+    roles: ["release_verifier", "branch_manager", "admin", "super_admin"],
+    icon: IconShieldCheck,
+  },
+  {
+    href: "/inventory",
+    title: "Inventory control",
+    description: "Receive stock, request adjustments, run counts, and approve variances.",
+    roles: ["branch_manager", "admin", "super_admin"],
+    icon: IconPackage,
+  },
+  {
+    href: "/reversals",
+    title: "Reversals and refunds",
+    description: "Reverse completed sales, record corrections, and approve refund records.",
+    roles: ["branch_manager", "admin", "super_admin"],
+    icon: IconReceiptRefund,
+  },
+  {
+    href: "/reports",
+    title: "Reports and analytics",
+    description: "Review sales, payments, inventory, stock movement, credit, and staff activity.",
+    roles: ["order_registrar", "cashier", "release_verifier", "branch_manager", "admin", "super_admin"],
+    icon: IconReportAnalytics,
+  },
+  {
+    href: "/branches",
+    title: "Branches",
+    description: "Create branch locations and configure workflow rules for each outlet.",
+    roles: ["admin", "super_admin"],
+    icon: IconBuildingStore,
+  },
+  {
+    href: "/catalog/products",
+    title: "Product catalog",
+    description: "Manage master products and branch product pricing controls.",
+    roles: ["admin", "super_admin"],
+    icon: IconDiamond,
+  },
+  {
+    href: "/access",
+    title: "Access management",
+    description: "Invite users, assign workflow roles, and control branch access.",
+    roles: ["admin", "super_admin"],
+    icon: IconLockAccess,
+  },
+];
+
 function moneyOrValue(value: unknown, money?: boolean) {
   if (money) return formatNairaFromKobo(typeof value === "number" ? value : 0);
   if (typeof value === "boolean") return value ? "Yes" : "No";
@@ -224,9 +315,9 @@ function reportInput(branchId: string | null, branchScope: BranchScope, startDat
 
 export function SummaryMetricCard({ label, value, money }: { label: string; value: unknown; money?: boolean }) {
   return (
-    <div className="rounded-lg border bg-card p-4">
-      <p className="text-xs font-medium uppercase text-muted-foreground">{label}</p>
-      <p className="mt-2 text-xl font-semibold tracking-normal">{moneyOrValue(value, money)}</p>
+    <div className="app-surface fluid-hover rounded-xl border p-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
+      <p className="mt-2 text-xl font-semibold tracking-normal text-foreground">{moneyOrValue(value, money)}</p>
     </div>
   );
 }
@@ -386,7 +477,7 @@ export function DashboardClient() {
           <Button asChild><Link href="/reports"><IconChartBar />Reports</Link></Button>
         </div>
       </div>
-      <div className="grid gap-3 rounded-lg border bg-card p-4 md:grid-cols-3">
+      <div className="app-surface grid gap-3 rounded-xl border p-4 md:grid-cols-3">
         <BranchScopeSelector branchScope={branchScope} setBranchScope={setBranchScope} />
       </div>
       {blocked ? <OperationState detail="Choose a branch or switch to all branches." title="Branch required" /> : null}
@@ -396,17 +487,17 @@ export function DashboardClient() {
           <SummaryMetricCard key={String(key)} label={String(label)} money={Boolean(money)} value={data?.summary[String(key)]} />
         ))}
       </div>
+      <WorkflowLinks role={user.platformRole} />
       {Array.isArray(data?.summary.branchComparison) && data.summary.branchComparison.length > 0 ? (
         <BranchComparisonTable rows={data.summary.branchComparison as Record<string, unknown>[]} />
       ) : null}
-      {!management ? <QuickLinks /> : null}
     </div>
   );
 }
 
 function BranchComparisonTable({ rows }: { rows: Record<string, unknown>[] }) {
   return (
-    <div className="overflow-x-auto rounded-lg border">
+    <div className="app-surface overflow-x-auto rounded-xl border">
       <table className="min-w-full text-left text-sm">
         <thead className="bg-muted text-xs uppercase text-muted-foreground">
           <tr><th className="px-3 py-2">Branch</th><th className="px-3 py-2">Sales</th><th className="px-3 py-2">Received</th></tr>
@@ -425,13 +516,41 @@ function BranchComparisonTable({ rows }: { rows: Record<string, unknown>[] }) {
   );
 }
 
-function QuickLinks() {
+function WorkflowLinks({ role }: { role: PlatformRole }) {
+  const visibleWorkflows = workflowCards.filter((workflow) => workflow.roles.includes(role));
+
   return (
-    <div className="grid gap-3 md:grid-cols-3">
-      <Button asChild variant="outline"><Link href="/orders">Order queue</Link></Button>
-      <Button asChild variant="outline"><Link href="/cashier">Payment queue</Link></Button>
-      <Button asChild variant="outline"><Link href="/release">Release queue</Link></Button>
-    </div>
+    <section className="space-y-3">
+      <div>
+        <h2 className="text-lg font-semibold tracking-normal">Workflow access</h2>
+        <p className="text-sm text-muted-foreground">Available work queues and control areas for your role.</p>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {visibleWorkflows.map((workflow) => {
+          const Icon = workflow.icon;
+
+          return (
+            <Link
+              className="app-surface fluid-hover group rounded-xl border p-4 hover:border-ring/40"
+              href={workflow.href}
+              key={workflow.href}
+            >
+              <div className="flex items-start gap-3">
+                <span className="rounded-lg border bg-secondary p-2 text-muted-foreground transition group-hover:text-foreground">
+                  <Icon aria-hidden="true" className="size-5" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block font-medium">{workflow.title}</span>
+                  <span className="mt-1 block text-sm text-muted-foreground">
+                    {workflow.description}
+                  </span>
+                </span>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

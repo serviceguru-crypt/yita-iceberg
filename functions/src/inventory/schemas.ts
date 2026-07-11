@@ -9,7 +9,7 @@ const nonNegativeQty = z.number().int().min(0);
 const money = z.number().int().min(0);
 
 export const createProductSchema = z.object({
-  sku: z.string().trim().min(1).max(80),
+  sku: z.string().trim().min(1).max(80).optional(),
   name: z.string().trim().min(1).max(200),
   unit: z.string().trim().min(1).max(40),
   description: optionalText,

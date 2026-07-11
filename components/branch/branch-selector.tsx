@@ -16,14 +16,18 @@ export function BranchSelector() {
   } = useBranchContext();
 
   return (
-    <div className="flex min-w-0 items-center gap-2 rounded-lg border px-3 py-2">
-      <IconBuildingStore className="size-4 shrink-0 text-muted-foreground" />
+    <div className="app-surface glass-edge flex min-w-0 items-center gap-2 rounded-xl border px-3 py-2">
+      <span className="glass-edge grid size-8 shrink-0 place-items-center rounded-lg bg-secondary text-foreground">
+        <IconBuildingStore className="size-4" />
+      </span>
       <div className="min-w-0">
-        <p className="truncate text-xs text-muted-foreground">Active branch</p>
+        <p className="truncate text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+          Active branch
+        </p>
         {branches.length > 1 || requiresSelection ? (
           <select
             aria-label="Active branch"
-            className="w-full min-w-40 bg-transparent text-sm font-medium outline-none"
+            className="w-full min-w-40 bg-transparent text-sm font-semibold tracking-normal outline-none"
             disabled={loading}
             onChange={(event) => selectBranch(event.target.value)}
             value={selectedBranchId ?? ""}
@@ -38,7 +42,7 @@ export function BranchSelector() {
             ))}
           </select>
         ) : (
-          <p className="truncate text-sm font-medium">
+          <p className="truncate text-sm font-semibold tracking-normal">
             {selectedBranch?.name ?? (error || "No branch assigned")}
           </p>
         )}

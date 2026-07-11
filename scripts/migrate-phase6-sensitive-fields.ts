@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { applicationDefault, cert, getApps, initializeApp } from "firebase-admin/app";
 import { FieldValue, getFirestore, type WriteBatch } from "firebase-admin/firestore";
 import { z } from "zod";
@@ -13,6 +15,7 @@ const envSchema = z.object({
   FIREBASE_CLIENT_EMAIL: z.string().optional(),
   FIREBASE_PRIVATE_KEY: z.string().optional(),
   FIREBASE_SERVICE_ACCOUNT_JSON: z.string().optional(),
+  FIREBASE_SERVICE_ACCOUNT_FILE: z.string().optional(),
   PHASE6_MIGRATION_DRY_RUN: z.string().optional(),
 });
 
@@ -26,6 +29,14 @@ function initializeAdmin() {
 
   if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
     initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)), projectId });
+    return;
+  }
+
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_FILE) {
+    initializeApp({
+      credential: cert(JSON.parse(readFileSync(process.env.FIREBASE_SERVICE_ACCOUNT_FILE, "utf8"))),
+      projectId,
+    });
     return;
   }
 

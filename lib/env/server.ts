@@ -9,6 +9,7 @@ const serverEnvSchema = z.object({
   firebaseClientEmail: z.string().optional(),
   firebasePrivateKey: z.string().optional(),
   firebaseServiceAccountJson: z.string().optional(),
+  firebaseServiceAccountFile: z.string().optional(),
   firebaseStorageBucket: z.string().optional(),
   sessionCookieName: z.string().min(1).default("__session"),
   sessionCookieMaxAgeDays: z.number().int().positive().default(5),
@@ -22,7 +23,11 @@ const serverEnvSchema = z.object({
     if (!env.appBaseUrl) {
       ctx.addIssue({ code: "custom", message: "APP_BASE_URL is required in production." });
     }
-    if (!env.firebaseServiceAccountJson && !(env.firebaseClientEmail && env.firebasePrivateKey)) {
+    if (
+      !env.firebaseServiceAccountJson &&
+      !env.firebaseServiceAccountFile &&
+      !(env.firebaseClientEmail && env.firebasePrivateKey)
+    ) {
       ctx.addIssue({ code: "custom", message: "Production requires Firebase Admin credentials." });
     }
   }
@@ -48,6 +53,7 @@ export function getServerEnv() {
     firebaseClientEmail: process.env.FIREBASE_CLIENT_EMAIL,
     firebasePrivateKey: process.env.FIREBASE_PRIVATE_KEY,
     firebaseServiceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON,
+    firebaseServiceAccountFile: process.env.FIREBASE_SERVICE_ACCOUNT_FILE,
     firebaseStorageBucket:
       process.env.FIREBASE_STORAGE_BUCKET ||
       process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,

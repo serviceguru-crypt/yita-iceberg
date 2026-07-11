@@ -3,7 +3,13 @@
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 
-export function QrCode({ payload }: { payload: string }) {
+export function QrCode({
+  alt = "Verification QR code",
+  payload,
+}: {
+  alt?: string;
+  payload: string;
+}) {
   const [src, setSrc] = useState<string | null>(null);
 
   useEffect(() => {
@@ -30,7 +36,7 @@ export function QrCode({ payload }: { payload: string }) {
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      alt="Order verification QR code"
+      alt={alt}
       className="size-48 rounded-lg border bg-white p-2"
       src={src}
     />

@@ -38,6 +38,11 @@ import { timestampLabel } from "@/lib/types/operational";
 
 type ReceiptLine = { productId: string; quantity: number; unitCost: string };
 type CountInput = { productId: string; countedQty: string };
+type InventoryOverviewResponse = {
+  ok?: boolean;
+  message?: string;
+  items?: InventoryDocument[];
+};
 
 function fromDoc<T>(id: string, data: Record<string, unknown>) {
   return { id, ...data } as T;
@@ -66,6 +71,23 @@ async function loadBranchProducts(branchId: string) {
   return snapshot.docs.map((item) => fromDoc<ProductDocument>(item.id, item.data()));
 }
 
+async function fetchInventoryOverview(branchId: string) {
+  const response = await fetch(
+    `/api/inventory/overview?branchId=${encodeURIComponent(branchId)}`,
+    {
+      cache: "no-store",
+      credentials: "same-origin",
+    },
+  );
+  const result = (await response.json()) as InventoryOverviewResponse;
+
+  if (!response.ok || !result.ok || !Array.isArray(result.items)) {
+    throw new Error(result.message || "Unable to load branch inventory.");
+  }
+
+  return result.items;
+}
+
 export function InventoryListClient() {
   return (
     <BranchRequired>
@@ -87,21 +109,9 @@ function InventoryList() {
     if (!selectedBranchId) return;
     setError(null);
     try {
-      const clauses = [];
-      if (filter === "low") clauses.push(where("isLowStock", "==", true));
-      if (filter === "active") clauses.push(where("isActive", "==", true));
-      if (filter === "inactive") clauses.push(where("isActive", "==", false));
-      const snapshot = await getDocs(
-        query(
-          collection(getFirebaseServices().db, `branches/${selectedBranchId}/inventory`),
-          ...clauses,
-          orderBy("productName"),
-          limit(50),
-        ),
-      );
-      setItems(snapshot.docs.map((item) => fromDoc<InventoryDocument>(item.id, item.data())));
-    } catch {
-      setError("Unable to load branch inventory.");
+      setItems(await fetchInventoryOverview(selectedBranchId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load branch inventory.");
     }
   }
 
@@ -178,6 +188,23 @@ function InventoryList() {
           </tbody>
         </table>
       </div>
+      {!error && visible.length === 0 ? (
+        <OperationState
+          detail={
+            items.length > 0
+              ? "Try a different search term or inventory filter."
+              : manager
+              ? "Products become inventory items after they are added to the active branch. Add catalog products to this branch, then post stock receipts when physical stock arrives."
+              : "No branch inventory is available for this branch yet."
+          }
+          title={items.length > 0 ? "No matching inventory items" : "No inventory items yet"}
+        />
+      ) : null}
+      {manager && items.length === 0 ? (
+        <Button asChild variant="outline">
+          <Link href="/catalog/branch-products">Add products to branch</Link>
+        </Button>
+      ) : null}
       {!admin ? <p className="text-xs text-muted-foreground">Cost and valuation data are hidden for this role.</p> : null}
     </div>
   );

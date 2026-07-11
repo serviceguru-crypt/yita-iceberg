@@ -1,5 +1,6 @@
 "use client";
 
+import { IconLogout } from "@tabler/icons-react";
 import { signOut } from "firebase/auth";
 import { useRouter } from "next/navigation";
 
@@ -19,6 +20,7 @@ export function SignOutButton() {
 
   return (
     <Button onClick={handleSignOut} variant="outline">
+      <IconLogout />
       Sign out
     </Button>
   );

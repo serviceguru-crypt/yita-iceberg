@@ -10,6 +10,19 @@ Dry run validates configuration and production guard behavior without authentica
 
 ## Staging Authenticated Checks
 
+Seed the minimal staging smoke data after staging deploy and before the full workflow test:
+
+```bash
+APP_ENV=staging \
+FIREBASE_PROJECT_ID=yita-iceberg-staging \
+STAGING_SEED_CONFIRM=true \
+STAGING_SEED_DRY_RUN=false \
+STAGING_SEED_PASSWORD="<temporary-staging-password>" \
+npm run seed:staging-smoke -- --apply
+```
+
+The seed script refuses production-looking project IDs and is dry-run by default. It creates deterministic `SMOKE TEST` branch, users, product, inventory, pricing, and customer records.
+
 Set:
 
 ```text

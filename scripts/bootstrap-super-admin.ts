@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 import { cert, getApps, initializeApp, applicationDefault } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
@@ -17,6 +18,7 @@ const envSchema = z.object({
   FIREBASE_CLIENT_EMAIL: z.string().optional(),
   FIREBASE_PRIVATE_KEY: z.string().optional(),
   FIREBASE_SERVICE_ACCOUNT_JSON: z.string().optional(),
+  FIREBASE_SERVICE_ACCOUNT_FILE: z.string().optional(),
 });
 
 function initializeAdmin() {
@@ -32,6 +34,14 @@ function initializeAdmin() {
   if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
     initializeApp({
       credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)),
+      projectId,
+    });
+    return;
+  }
+
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_FILE) {
+    initializeApp({
+      credential: cert(JSON.parse(readFileSync(process.env.FIREBASE_SERVICE_ACCOUNT_FILE, "utf8"))),
       projectId,
     });
     return;

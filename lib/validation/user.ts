@@ -7,7 +7,7 @@ export const platformRoleSchema = z.enum(platformRoles);
 export const userProfileSchema = z.object({
   displayName: z.string().min(1),
   email: z.string().email(),
-  phone: z.string().optional(),
+  phone: z.string().nullable().optional(),
   isActive: z.boolean(),
   platformRole: platformRoleSchema,
   assignedBranchIds: z.array(z.string().min(1)),

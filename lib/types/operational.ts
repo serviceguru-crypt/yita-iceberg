@@ -30,6 +30,7 @@ export type ProductDocument = {
   categoryId?: string | null;
   unit: string;
   barcode?: string | null;
+  qrCodePayload?: string | null;
   sellingPriceKobo?: number;
   minimumPriceKobo?: number;
   isActive?: boolean;
@@ -338,6 +339,12 @@ export type ReportResult = {
 };
 
 export function timestampLabel(value: unknown) {
+  if (typeof value === "string" || typeof value === "number") {
+    const date = new Date(value);
+
+    return Number.isNaN(date.getTime()) ? "Not recorded" : date.toLocaleString("en-NG");
+  }
+
   if (!value || typeof value !== "object") return "Not recorded";
   if ("toDate" in value && typeof value.toDate === "function") {
     return value.toDate().toLocaleString("en-NG");

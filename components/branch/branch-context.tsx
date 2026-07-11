@@ -8,18 +8,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  limit,
-  orderBy,
-  query,
-  where,
-} from "firebase/firestore";
 
-import { getFirebaseServices } from "@/lib/firebase/client";
 import { isAdminRole } from "@/lib/domain/roles";
 import type {
   BranchDocument,
@@ -44,19 +33,6 @@ function storageKey(userId: string) {
   return `yita:selectedBranch:${userId}`;
 }
 
-function toBranch(id: string, data: Record<string, unknown>): BranchDocument {
-  return {
-    id,
-    name: String(data.name ?? id),
-    code: data.code ? String(data.code) : undefined,
-    isActive: data.isActive === true,
-    settings:
-      typeof data.settings === "object" && data.settings !== null
-        ? (data.settings as BranchDocument["settings"])
-        : undefined,
-  };
-}
-
 export function BranchProvider({
   children,
   user,
@@ -75,33 +51,21 @@ export function BranchProvider({
     setError(null);
 
     try {
-      const { db } = getFirebaseServices();
-      let nextBranches: BranchDocument[] = [];
+      const response = await fetch("/api/branches", {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      const result = (await response.json()) as {
+        ok?: boolean;
+        branches?: BranchDocument[];
+        message?: string;
+      };
 
-      if (admin) {
-        const snapshot = await getDocs(
-          query(
-            collection(db, "branches"),
-            where("isActive", "==", true),
-            orderBy("name"),
-            limit(50),
-          ),
-        );
-        nextBranches = snapshot.docs.map((branch) =>
-          toBranch(branch.id, branch.data()),
-        );
-      } else {
-        const snapshots = await Promise.all(
-          user.assignedBranchIds.map((branchId) =>
-            getDoc(doc(db, "branches", branchId)),
-          ),
-        );
-        nextBranches = snapshots
-          .filter((snapshot) => snapshot.exists())
-          .map((snapshot) => toBranch(snapshot.id, snapshot.data()))
-          .filter((branch) => branch.isActive !== false);
+      if (!response.ok || !result.ok || !Array.isArray(result.branches)) {
+        throw new Error(result.message || "Unable to load branch context.");
       }
 
+      const nextBranches = result.branches;
       setBranches(nextBranches);
       const saved =
         typeof window !== "undefined"
@@ -115,8 +79,11 @@ export function BranchProvider({
       } else {
         setSelectedBranchId(null);
       }
-    } catch {
-      setError("Unable to load branch context.");
+    } catch (err) {
+      console.error("Branch context load failed", err);
+      setError(
+        err instanceof Error ? err.message : "Unable to load branch context.",
+      );
     } finally {
       setLoading(false);
     }
