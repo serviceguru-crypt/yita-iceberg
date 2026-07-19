@@ -18,6 +18,12 @@ Cloud Functions use structured logging helpers in `functions/src/shared/logging.
 - Firestore read/write quota and cost threshold.
 - Storage growth for payment proofs.
 
+Name production alert policies with a `YITA` prefix. At minimum, configure function error rate, callable latency, Firestore quota, and budget alerts. Verify the deployed policies together with backup schedules:
+
+```bash
+FIREBASE_PROJECT_ID=yita-iceberg npm run verify:cloud-ops
+```
+
 ## Suggested Metrics
 
 - Function execution count, error count, and latency by function.

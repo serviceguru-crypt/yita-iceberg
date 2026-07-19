@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { IconRefresh, IconUserPlus } from "@tabler/icons-react";
+import { IconEdit, IconRefresh, IconUserPlus, IconX } from "@tabler/icons-react";
 
 import { useBranchContext } from "@/components/branch/branch-context";
 import { Field } from "@/components/shared/field";
 import { OperationState } from "@/components/shared/operation-state";
 import { Button } from "@/components/ui/button";
 import { isAdminRole, platformRoles, type PlatformRole } from "@/lib/domain/roles";
+import { callFunction } from "@/lib/firebase/callables";
 
 type AccessUser = {
   uid: string;
@@ -46,6 +47,10 @@ export function AccessManagementClient() {
   const [phone, setPhone] = useState("");
   const [platformRole, setPlatformRole] = useState<PlatformRole>("order_registrar");
   const [assignedBranchIds, setAssignedBranchIds] = useState<string[]>([]);
+  const [editingUser, setEditingUser] = useState<AccessUser | null>(null);
+  const [editingRole, setEditingRole] = useState<PlatformRole>("order_registrar");
+  const [editingBranchIds, setEditingBranchIds] = useState<string[]>([]);
+  const [editingActive, setEditingActive] = useState(true);
 
   const canManageAccess = isAdminRole(user.platformRole);
   const canAssignSuperAdmin = user.platformRole === "super_admin";
@@ -157,6 +162,53 @@ export function AccessManagementClient() {
 
     await navigator.clipboard.writeText(inviteLink);
     setCopied(true);
+  }
+
+  function beginEdit(profile: AccessUser) {
+    setEditingUser(profile);
+    setEditingRole(profile.platformRole);
+    setEditingBranchIds(profile.assignedBranchIds);
+    setEditingActive(profile.isActive);
+    setMessage(null);
+    setError(null);
+  }
+
+  function handleEditingRoleChange(nextRole: PlatformRole) {
+    setEditingRole(nextRole);
+    if (!requiresBranchAssignment(nextRole)) {
+      setEditingBranchIds([]);
+    }
+  }
+
+  function toggleEditingBranch(branchId: string) {
+    setEditingBranchIds((current) =>
+      current.includes(branchId)
+        ? current.filter((id) => id !== branchId)
+        : [...current, branchId],
+    );
+  }
+
+  async function saveUserAccess() {
+    if (!editingUser) return;
+
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await callFunction("updateUserAccess", {
+        uid: editingUser.uid,
+        platformRole: editingRole,
+        assignedBranchIds: requiresBranchAssignment(editingRole) ? editingBranchIds : [],
+        isActive: editingActive,
+      });
+      setMessage(`${editingUser.displayName}'s access was updated.`);
+      setEditingUser(null);
+      await Promise.all([loadUsers(), reloadBranches()]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update user access.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   if (!canManageAccess) {
@@ -312,6 +364,74 @@ export function AccessManagementClient() {
           </p>
         </div>
         {loadingUsers ? <OperationState title="Loading users" /> : null}
+        {editingUser ? (
+          <div className="space-y-4 rounded-lg border bg-card p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="font-semibold">Edit {editingUser.displayName}</h3>
+                <p className="text-sm text-muted-foreground">{editingUser.email}</p>
+              </div>
+              <Button
+                aria-label="Close user editor"
+                onClick={() => setEditingUser(null)}
+                size="icon"
+                type="button"
+                variant="ghost"
+              >
+                <IconX />
+              </Button>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <Field label="Role">
+                <select
+                  className="h-9 rounded-md border bg-background px-3"
+                  onChange={(event) => handleEditingRoleChange(event.target.value as PlatformRole)}
+                  value={editingRole}
+                >
+                  {roleOptions.map((role) => (
+                    <option key={role} value={role}>{roleLabels[role]}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Account status">
+                <label className="flex h-9 items-center gap-2 rounded-md border bg-background px-3 text-sm font-normal">
+                  <input
+                    checked={editingActive}
+                    onChange={(event) => setEditingActive(event.target.checked)}
+                    type="checkbox"
+                  />
+                  Active account
+                </label>
+              </Field>
+            </div>
+            {requiresBranchAssignment(editingRole) ? (
+              <Field label="Branch assignment">
+                <div className="grid gap-2 rounded-md border bg-background p-3 sm:grid-cols-2">
+                  {branches.map((branch) => (
+                    <label className="flex items-center gap-2 text-sm font-normal" key={branch.id}>
+                      <input
+                        checked={editingBranchIds.includes(branch.id)}
+                        onChange={() => toggleEditingBranch(branch.id)}
+                        type="checkbox"
+                      />
+                      {branch.name}
+                    </label>
+                  ))}
+                </div>
+              </Field>
+            ) : null}
+            <Button
+              disabled={
+                busy ||
+                (requiresBranchAssignment(editingRole) && editingBranchIds.length === 0)
+              }
+              onClick={() => void saveUserAccess()}
+              type="button"
+            >
+              {busy ? "Saving" : "Save access"}
+            </Button>
+          </div>
+        ) : null}
         {!loadingUsers && users.length === 0 ? (
           <OperationState detail="Invite a user to begin building the staff list." title="No users found" />
         ) : null}
@@ -324,6 +444,7 @@ export function AccessManagementClient() {
                   <th className="px-3 py-2">Role</th>
                   <th className="px-3 py-2">Branches</th>
                   <th className="px-3 py-2">Status</th>
+                  <th className="px-3 py-2"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -345,6 +466,20 @@ export function AccessManagementClient() {
                       <span className="rounded-md bg-secondary px-2 py-1 text-xs">
                         {profile.isActive ? "Active" : "Inactive"}
                       </span>
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {profile.uid !== user.uid &&
+                      (user.platformRole === "super_admin" || profile.platformRole !== "super_admin") ? (
+                        <Button
+                          aria-label={`Edit access for ${profile.displayName}`}
+                          onClick={() => beginEdit(profile)}
+                          size="icon"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <IconEdit />
+                        </Button>
+                      ) : null}
                     </td>
                   </tr>
                 ))}

@@ -23,13 +23,6 @@ const serverEnvSchema = z.object({
     if (!env.appBaseUrl) {
       ctx.addIssue({ code: "custom", message: "APP_BASE_URL is required in production." });
     }
-    if (
-      !env.firebaseServiceAccountJson &&
-      !env.firebaseServiceAccountFile &&
-      !(env.firebaseClientEmail && env.firebasePrivateKey)
-    ) {
-      ctx.addIssue({ code: "custom", message: "Production requires Firebase Admin credentials." });
-    }
   }
 });
 
@@ -49,7 +42,7 @@ export function getServerEnv() {
     firebaseProjectId:
       process.env.FIREBASE_PROJECT_ID ||
       process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ||
-      "yita-iceberg-dev",
+      "yita-iceberg",
     firebaseClientEmail: process.env.FIREBASE_CLIENT_EMAIL,
     firebasePrivateKey: process.env.FIREBASE_PRIVATE_KEY,
     firebaseServiceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON,

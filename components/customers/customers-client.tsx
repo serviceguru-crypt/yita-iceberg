@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { collection, getDocs, limit, query, where } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, limit, query, where } from "firebase/firestore";
 
 import { BranchRequired } from "@/components/branch/branch-required";
 import { useBranchContext } from "@/components/branch/branch-context";
@@ -64,9 +64,93 @@ function CustomerList() {
             <p className="font-medium">{customer.name}</p>
             <p className="text-sm text-muted-foreground">{customer.phone}</p>
             {customer.address ? <p className="mt-2 text-sm">{customer.address}</p> : null}
+            <Button asChild className="mt-3" size="sm" variant="outline">
+              <Link href={`/customers/${customer.id}`}>Edit</Link>
+            </Button>
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+export function CustomerDetailClient({ customerId }: { customerId: string }) {
+  return (
+    <BranchRequired>
+      <CustomerDetail customerId={customerId} />
+    </BranchRequired>
+  );
+}
+
+function CustomerDetail({ customerId }: { customerId: string }) {
+  const { selectedBranchId } = useBranchContext();
+  const [customer, setCustomer] = useState<CustomerDocument | null>(null);
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [address, setAddress] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function loadCustomer() {
+    if (!selectedBranchId) return;
+    const snapshot = await getDoc(doc(getFirebaseServices().db, "customers", customerId));
+    if (!snapshot.exists()) throw new Error("Customer not found.");
+    const next = { id: snapshot.id, ...(snapshot.data() as Omit<CustomerDocument, "id">) };
+    if (next.branchId !== selectedBranchId) throw new Error("This customer belongs to another branch.");
+    setCustomer(next);
+    setName(next.name);
+    setPhone(next.phone);
+    setAddress(next.address ?? "");
+  }
+
+  useEffect(() => {
+    void loadCustomer().catch((err) =>
+      setError(err instanceof Error ? err.message : "Unable to load customer."),
+    );
+  }, [customerId, selectedBranchId]);
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await callFunction("updateCustomer", {
+        customerId,
+        name,
+        phone,
+        address,
+        idempotencyKey: createIdempotencyKey("update-customer"),
+      });
+      setMessage("Customer details updated.");
+      await loadCustomer();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update customer.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!customer && !error) return <OperationState title="Loading customer" />;
+
+  return (
+    <div className="mx-auto max-w-xl space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold tracking-normal">Customer details</h1>
+        <Button asChild variant="outline"><Link href="/customers">Back</Link></Button>
+      </div>
+      {message ? <OperationState detail={message} title="Customer updated" /> : null}
+      {error ? <OperationState detail={error} title="Customer unavailable" /> : null}
+      {customer ? (
+        <div className="grid gap-3 rounded-lg border bg-card p-4">
+          <Field label="Name"><input className="h-9 rounded-md border bg-background px-3" onChange={(event) => setName(event.target.value)} value={name} /></Field>
+          <Field label="Phone"><input className="h-9 rounded-md border bg-background px-3" onChange={(event) => setPhone(event.target.value)} value={phone} /></Field>
+          <Field label="Address"><textarea className="min-h-24 rounded-md border bg-background px-3 py-2" onChange={(event) => setAddress(event.target.value)} value={address} /></Field>
+          <Button disabled={saving || !name.trim() || !phone.trim()} onClick={() => void save()} type="button">
+            {saving ? "Saving" : "Save changes"}
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

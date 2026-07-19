@@ -45,6 +45,10 @@ service cloud.firestore {
       return isAdmin() || isBranchManagerFor(branchId);
     }
 
+    function canReadFinancialsFor(branchId) {
+      return isAdmin() || isBranchManagerFor(branchId);
+    }
+
     function orderBranch(orderId) {
       return get(/databases/$(database)/documents/orders/$(orderId)).data.branchId;
     }
@@ -133,12 +137,12 @@ service cloud.firestore {
     }
 
     match /financialTransactions/{transactionId} {
-      allow read: if activeUser() && hasBranchAccess(resource.data.branchId);
+      allow read: if canReadFinancialsFor(resource.data.branchId);
       allow write: if false;
     }
 
     match /saleReversals/{reversalId} {
-      allow read: if activeUser() && hasBranchAccess(resource.data.branchId);
+      allow read: if canReadFinancialsFor(resource.data.branchId);
       allow write: if false;
     }
 

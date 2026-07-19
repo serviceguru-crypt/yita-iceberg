@@ -15,18 +15,13 @@ import {
 } from "../src/reports/service";
 
 function init() {
-  if (getApps().length === 0) initializeApp({ projectId: "yita-iceberg-dev" });
+  if (getApps().length === 0) initializeApp({ projectId: "yita-iceberg" });
 }
 
 async function clearFirestore() {
   const db = getFirestore();
   const collections = await db.listCollections();
-  await Promise.all(
-    collections.map(async (collection) => {
-      const snapshot = await collection.get();
-      await Promise.all(snapshot.docs.map((doc) => doc.ref.delete()));
-    }),
-  );
+  await Promise.all(collections.map((collection) => db.recursiveDelete(collection)));
 }
 
 async function clearAuthUsers() {

@@ -71,6 +71,24 @@ async function loadBranchProducts(branchId: string) {
   return snapshot.docs.map((item) => fromDoc<ProductDocument>(item.id, item.data()));
 }
 
+async function loadCatalogProducts() {
+  const response = await fetch("/api/catalog/products", {
+    cache: "no-store",
+    credentials: "same-origin",
+  });
+  const result = (await response.json()) as {
+    ok?: boolean;
+    message?: string;
+    products?: ProductDocument[];
+  };
+
+  if (!response.ok || !result.ok || !Array.isArray(result.products)) {
+    throw new Error(result.message || "Unable to load product catalog.");
+  }
+
+  return result.products;
+}
+
 async function fetchInventoryOverview(branchId: string) {
   const response = await fetch(
     `/api/inventory/overview?branchId=${encodeURIComponent(branchId)}`,
@@ -141,8 +159,8 @@ function InventoryList() {
           <Button onClick={() => void load()} type="button" variant="outline"><IconRefresh />Refresh</Button>
           {manager ? (
             <>
-              <Button asChild variant="outline"><Link href="/inventory/receipts/new"><IconPlus />Stock receipt</Link></Button>
-              <Button asChild variant="outline"><Link href="/inventory/adjustments/new">Adjustment</Link></Button>
+              <Button asChild variant="outline"><Link href="/inventory/receipts/new"><IconPlus />Receive stock</Link></Button>
+              <Button asChild variant="outline"><Link href="/inventory/adjustments/new">Stock correction</Link></Button>
               <Button asChild><Link href="/inventory/counts/new">Stock count</Link></Button>
             </>
           ) : null}
@@ -299,17 +317,25 @@ export function StockReceiptListClient() {
 }
 
 function StockReceiptList() {
-  const { selectedBranchId } = useBranchContext();
+  const { selectedBranchId, user } = useBranchContext();
   const [receipts, setReceipts] = useState<StockReceiptDocument[]>([]);
   useEffect(() => {
     async function load() {
       if (!selectedBranchId) return;
-      const snapshot = await getDocs(query(collection(getFirebaseServices().db, "stockReceipts"), where("branchId", "==", selectedBranchId), orderBy("receivedAt", "desc"), limit(30)));
-      setReceipts(snapshot.docs.map((item) => fromDoc<StockReceiptDocument>(item.id, item.data())));
+      const db = getFirebaseServices().db;
+      const branchQuery = getDocs(query(collection(db, "stockReceipts"), where("branchId", "==", selectedBranchId), orderBy("receivedAt", "desc"), limit(30)));
+      const allocationQuery = isAdminRole(user.platformRole)
+        ? getDocs(query(collection(db, "stockReceipts"), where("destinationType", "==", "allocation_pool"), limit(30)))
+        : Promise.resolve(null);
+      const [branchSnapshot, allocationSnapshot] = await Promise.all([branchQuery, allocationQuery]);
+      setReceipts([
+        ...(allocationSnapshot?.docs.map((item) => fromDoc<StockReceiptDocument>(item.id, item.data())) ?? []),
+        ...branchSnapshot.docs.map((item) => fromDoc<StockReceiptDocument>(item.id, item.data())),
+      ]);
     }
     void load();
-  }, [selectedBranchId]);
-  return <Listing title="Stock receipts" newHref="/inventory/receipts/new" rows={receipts.map((r) => ({ id: r.id, title: r.receiptNumber, detail: `${r.items.length} item lines · ${formatNairaFromKobo(r.totalValueKobo)}`, href: `/inventory/receipts/${r.id}`, status: "posted" }))} />;
+  }, [selectedBranchId, user.platformRole]);
+  return <Listing title="Stock receipts" newHref="/inventory/receipts/new" rows={receipts.map((r) => ({ id: r.id, title: r.receiptNumber, detail: `${r.destinationType === "allocation_pool" ? "Unallocated stock" : "Active branch"} · ${r.items.length} item lines · ${formatNairaFromKobo(r.totalValueKobo)}`, href: `/inventory/receipts/${r.id}`, status: "posted" }))} />;
 }
 
 export function StockReceiptFormClient() {
@@ -317,21 +343,46 @@ export function StockReceiptFormClient() {
 }
 
 function StockReceiptForm() {
-  const { selectedBranchId } = useBranchContext();
+  const { selectedBranch, selectedBranchId, user } = useBranchContext();
+  const admin = isAdminRole(user.platformRole);
+  const [destination, setDestination] = useState<"branch" | "allocation_pool">("branch");
   const [products, setProducts] = useState<ProductDocument[]>([]);
   const [lines, setLines] = useState<ReceiptLine[]>([]);
   const [supplierName, setSupplierName] = useState("");
   const [result, setResult] = useState<{ receiptId: string; receiptNumber: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    if (selectedBranchId) void loadBranchProducts(selectedBranchId).then(setProducts);
-  }, [selectedBranchId]);
+    if (admin && new URLSearchParams(window.location.search).get("destination") === "allocation") {
+      setDestination("allocation_pool");
+    }
+  }, [admin]);
+  useEffect(() => {
+    setLines([]);
+    setResult(null);
+    setError(null);
+
+    if (destination === "allocation_pool") {
+      void loadCatalogProducts().then(setProducts).catch((err) => setError(err instanceof Error ? err.message : "Unable to load products."));
+    } else if (selectedBranchId) {
+      void loadBranchProducts(selectedBranchId).then(setProducts).catch((err) => setError(err instanceof Error ? err.message : "Unable to load products."));
+    }
+  }, [destination, selectedBranchId]);
   const total = lines.reduce((sum, line) => sum + line.quantity * parseNairaToKobo(line.unitCost), 0);
   async function submit() {
     if (!selectedBranchId || !window.confirm("Post this stock receipt? It cannot be edited.")) return;
     setError(null);
     try {
-      const response = await callFunction<Record<string, unknown>, { receiptId: string; receiptNumber: string }>("recordStockReceipt", { branchId: selectedBranchId, supplierName, items: lines.map((line) => ({ productId: line.productId, quantity: line.quantity, unitCostKobo: parseNairaToKobo(line.unitCost) })), idempotencyKey: createIdempotencyKey("receipt") });
+      const input = { supplierName, items: lines.map((line) => ({ productId: line.productId, quantity: line.quantity, unitCostKobo: parseNairaToKobo(line.unitCost) })), idempotencyKey: createIdempotencyKey("receipt") };
+      let response: { receiptId: string; receiptNumber: string };
+
+      if (destination === "allocation_pool") {
+        response = await callFunction<
+          Record<string, unknown>,
+          { receiptId: string; receiptNumber: string }
+        >("recordAllocationStockReceipt", input);
+      } else {
+        response = await callFunction<Record<string, unknown>, { receiptId: string; receiptNumber: string }>("recordStockReceipt", { ...input, branchId: selectedBranchId });
+      }
       setResult(response);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to post receipt.");
@@ -341,10 +392,11 @@ function StockReceiptForm() {
     <FormShell title="New stock receipt" backHref="/inventory/receipts">
       {error ? <OperationState detail={error} title="Receipt failed" /> : null}
       {result ? <OperationState detail={result.receiptNumber} title="Receipt posted" /> : null}
+      {admin ? <Field label="Destination"><div className="grid grid-cols-2 gap-1 rounded-lg border bg-muted p-1"><Button onClick={() => setDestination("branch")} type="button" variant={destination === "branch" ? "default" : "ghost"}>{selectedBranch?.name ?? "Active branch"}</Button><Button onClick={() => setDestination("allocation_pool")} type="button" variant={destination === "allocation_pool" ? "default" : "ghost"}>For allocation</Button></div></Field> : null}
       <Field label="Supplier name"><input className="h-9 rounded-md border bg-background px-3" onChange={(event) => setSupplierName(event.target.value)} value={supplierName} /></Field>
       <LineEditor products={products} lines={lines} setLines={setLines} />
       <div className="flex items-center justify-between rounded-lg border bg-card p-4"><span>Total</span><strong>{formatNairaFromKobo(total)}</strong></div>
-      <Button disabled={lines.length === 0} onClick={() => void submit()} type="button">Post receipt</Button>
+      <Button disabled={lines.length === 0 || lines.some((line) => !line.productId || !line.unitCost)} onClick={() => void submit()} type="button">Post receipt</Button>
     </FormShell>
   );
 }
@@ -368,7 +420,64 @@ function LineEditor({ products, lines, setLines }: { products: ProductDocument[]
 }
 
 export function StockReceiptDetailClient({ receiptId }: { receiptId: string }) {
-  return <BranchRequired><InventoryManagerOnly><DocumentDetail collectionName="stockReceipts" docId={receiptId} titleField="receiptNumber" /></InventoryManagerOnly></BranchRequired>;
+  return <BranchRequired><InventoryManagerOnly><StockReceiptDetail receiptId={receiptId} /></InventoryManagerOnly></BranchRequired>;
+}
+
+function StockReceiptDetail({ receiptId }: { receiptId: string }) {
+  const [receipt, setReceipt] = useState<StockReceiptDocument | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void getDoc(doc(getFirebaseServices().db, "stockReceipts", receiptId))
+      .then((snapshot) => {
+        if (!snapshot.exists()) throw new Error("Stock receipt not found.");
+        setReceipt(fromDoc<StockReceiptDocument>(snapshot.id, snapshot.data()));
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : "Unable to load stock receipt."));
+  }, [receiptId]);
+
+  if (error) return <OperationState detail={error} title="Receipt unavailable" />;
+  if (!receipt) return <OperationState title="Loading receipt" />;
+
+  return (
+    <FormShell title={receipt.receiptNumber} backHref="/inventory/receipts">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Metric label="Destination" value={receipt.destinationType === "allocation_pool" ? "Allocation pool" : "Branch stock"} />
+        <Metric label="Supplier" value={receipt.supplierName || "Not recorded"} />
+        <Metric label="Received" value={timestampLabel(receipt.receivedAt)} />
+        <Metric label="Total value" value={formatNairaFromKobo(receipt.totalValueKobo)} />
+      </div>
+      <div className="overflow-x-auto rounded-lg border bg-card">
+        <table className="min-w-full text-left text-sm">
+          <thead className="bg-muted text-xs uppercase text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2">Product</th>
+              <th className="px-3 py-2">Quantity</th>
+              <th className="px-3 py-2">Unit cost</th>
+              <th className="px-3 py-2">Line value</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {receipt.items.map((item) => (
+              <tr key={item.productId}>
+                <td className="px-3 py-2"><p className="font-medium">{item.productName}</p><p className="text-xs text-muted-foreground">{item.sku}</p></td>
+                <td className="px-3 py-2">{formatQuantity(item.quantity)}</td>
+                <td className="px-3 py-2">{formatNairaFromKobo(item.unitCostKobo)}</td>
+                <td className="px-3 py-2 font-medium">{formatNairaFromKobo(item.lineValueKobo)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="grid gap-2 rounded-lg border bg-card p-4 text-sm sm:grid-cols-2">
+        <p><span className="text-muted-foreground">Supplier reference:</span> {receipt.supplierReference || "Not recorded"}</p>
+        <p><span className="text-muted-foreground">Delivery reference:</span> {receipt.deliveryReference || "Not recorded"}</p>
+        <p><span className="text-muted-foreground">Received by:</span> {receipt.receivedBy}</p>
+        <p><span className="text-muted-foreground">Status:</span> {receipt.status}</p>
+        {receipt.notes ? <p className="sm:col-span-2"><span className="text-muted-foreground">Notes:</span> {receipt.notes}</p> : null}
+      </div>
+    </FormShell>
+  );
 }
 
 export function AdjustmentListClient() {
@@ -386,7 +495,7 @@ function AdjustmentList() {
     }
     void load();
   }, [selectedBranchId]);
-  return <Listing title="Inventory adjustments" newHref="/inventory/adjustments/new" rows={rows.map((r) => ({ id: r.id, title: `${r.adjustmentType.replaceAll("_", " ")} · ${r.quantity}`, detail: r.reason, href: `/inventory/adjustments/${r.id}`, status: r.status }))} />;
+  return <Listing title="Stock corrections" newHref="/inventory/adjustments/new" rows={rows.map((r) => ({ id: r.id, title: `${r.adjustmentType.replaceAll("_", " ")} · ${r.quantity}`, detail: r.reason, href: `/inventory/adjustments/${r.id}`, status: r.status }))} />;
 }
 
 export function AdjustmentFormClient() {
@@ -408,10 +517,10 @@ function AdjustmentForm() {
     const response = await callFunction<Record<string, unknown>, { requestId: string }>("requestInventoryAdjustment", { branchId: selectedBranchId, productId, adjustmentType, quantity, reason, ...(adjustmentType === "increase" ? { unitCostKobo: parseNairaToKobo(unitCost) } : {}), idempotencyKey: createIdempotencyKey("adjustment") });
     setMessage(`Request ${response.requestId} submitted.`);
   }
-  return <FormShell title="New adjustment request" backHref="/inventory/adjustments">
+  return <FormShell title="New stock correction" backHref="/inventory/adjustments">
     {message ? <OperationState detail={message} title="Submitted" /> : null}
     <Field label="Product"><select className="h-9 rounded-md border bg-background px-3" onChange={(e) => setProductId(e.target.value)} value={productId}><option value="">Select product</option>{products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
-    <Field label="Type"><select className="h-9 rounded-md border bg-background px-3" onChange={(e) => setAdjustmentType(e.target.value)} value={adjustmentType}><option value="increase">Stock increase</option><option value="decrease">Stock decrease</option><option value="damage_write_off">Damage write-off</option></select></Field>
+    <Field label="Correction"><select className="h-9 rounded-md border bg-background px-3" onChange={(e) => setAdjustmentType(e.target.value)} value={adjustmentType}><option value="increase">Quantity too low</option><option value="decrease">Quantity too high</option><option value="damage_write_off">Damage write-off</option></select></Field>
     <Field label="Quantity"><input className="h-9 rounded-md border bg-background px-3" min={1} onChange={(e) => setQuantity(Number(e.target.value) || 1)} type="number" value={quantity} /></Field>
     {adjustmentType === "increase" ? <Field label="Unit cost"><input className="h-9 rounded-md border bg-background px-3" onChange={(e) => setUnitCost(e.target.value)} value={unitCost} /></Field> : null}
     <Field label="Reason"><textarea className="min-h-24 rounded-md border bg-background px-3 py-2" onChange={(e) => setReason(e.target.value)} value={reason} /></Field>
@@ -441,7 +550,7 @@ function AdjustmentDetail({ requestId }: { requestId: string }) {
   }
   if (!row) return <OperationState title="Loading adjustment" />;
   const admin = isAdminRole(user.platformRole);
-  return <FormShell title="Adjustment request" backHref="/inventory/adjustments">
+  return <FormShell title="Stock correction" backHref="/inventory/adjustments">
     {message ? <OperationState detail={message} title="Updated" /> : null}
     <div className="rounded-lg border bg-card p-4 text-sm"><p className="font-medium">{row.adjustmentType.replaceAll("_", " ")} · {row.quantity}</p><p className="text-muted-foreground">{row.reason}</p><p className="mt-2">Status: {row.status}</p></div>
     {admin && row.status === "pending" ? <div className="flex gap-2"><Button onClick={() => void decide("approveInventoryAdjustment")} type="button">Approve</Button><Button onClick={() => void decide("rejectInventoryAdjustment")} type="button" variant="destructive">Reject</Button></div> : null}
@@ -537,11 +646,4 @@ function Listing({ title, newHref, rows }: { title: string; newHref: string; row
 
 function FormShell({ title, backHref, children }: { title: string; backHref: string; children: React.ReactNode }) {
   return <div className="mx-auto max-w-3xl space-y-5"><div className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-2xl font-semibold tracking-normal">{title}</h1><Button asChild variant="outline"><Link href={backHref}>Back</Link></Button></div>{children}</div>;
-}
-
-function DocumentDetail({ collectionName, docId, titleField }: { collectionName: string; docId: string; titleField: string }) {
-  const [data, setData] = useState<Record<string, unknown> | null>(null);
-  useEffect(() => { void getDoc(doc(getFirebaseServices().db, collectionName, docId)).then((snapshot) => snapshot.exists() && setData(snapshot.data())); }, [collectionName, docId]);
-  if (!data) return <OperationState title="Loading document" />;
-  return <FormShell title={String(data[titleField] ?? docId)} backHref="/inventory/receipts"><pre className="overflow-auto rounded-lg border bg-card p-4 text-xs">{JSON.stringify(data, null, 2)}</pre></FormShell>;
 }

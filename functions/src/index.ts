@@ -10,6 +10,7 @@ export {
   approveStockCount,
   archiveProduct,
   createProduct,
+  recordAllocationStockReceipt,
   recordStockReceipt,
   rejectInventoryAdjustment,
   rejectStockCount,

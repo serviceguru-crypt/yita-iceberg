@@ -15,7 +15,7 @@ import {
 } from "firebase/firestore";
 import { getBytes, ref, uploadString } from "firebase/storage";
 
-const projectId = "yita-iceberg-dev";
+const projectId = "yita-iceberg";
 
 let testEnv: RulesTestEnvironment;
 
@@ -186,6 +186,16 @@ async function seedBaseData() {
         receivedBy: "manager-a",
         receivedAt: serverTimestamp(),
       }),
+      setDoc(doc(db, "stockReceipts/receipt-allocation"), {
+        receiptNumber: "SR-ALLOC",
+        destinationType: "allocation_pool",
+        branchId: null,
+        items: [],
+        totalValueKobo: 0,
+        status: "posted",
+        receivedBy: "admin-user",
+        receivedAt: serverTimestamp(),
+      }),
       setDoc(doc(db, "inventoryAdjustmentRequests/adjustment-a"), {
         branchId: "branch-a",
         productId: "product-1",
@@ -252,6 +262,26 @@ async function seedBaseData() {
         financialImpact: "refund_recorded",
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
+      }),
+      setDoc(doc(db, "financialTransactions/transaction-a"), {
+        branchId: "branch-a",
+        orderId: "order-a",
+        paymentId: "payment-a",
+        transactionType: "sale_payment",
+        paymentMethod: "bank_transfer",
+        amountKobo: 100000,
+        reference: "TRF-001",
+        receivedBy: "cashier-a",
+        createdAt: serverTimestamp(),
+      }),
+      setDoc(doc(db, "financialTransactions/transaction-b"), {
+        branchId: "branch-b",
+        orderId: "order-b",
+        transactionType: "sale_refund",
+        amountKobo: 50000,
+        reference: "RV-B",
+        receivedBy: "admin-user",
+        createdAt: serverTimestamp(),
       }),
       setDoc(doc(db, "reportSummaries/dailyBranch_branch-a_20260708"), {
         branchId: "branch-a",
@@ -388,17 +418,38 @@ describe("Firestore branch access rules", () => {
     await assertSucceeds(getDoc(doc(managerDb, "stockCounts/count-a")));
     await assertSucceeds(getDoc(doc(managerDb, "stockCounts/count-a/items/product-1")));
     await assertSucceeds(getDoc(doc(adminDb, "stockReceipts/receipt-a")));
+    await assertFails(getDoc(doc(managerDb, "stockReceipts/receipt-allocation")));
+    await assertSucceeds(getDoc(doc(adminDb, "stockReceipts/receipt-allocation")));
   });
 
-  it("allows branch-scoped reversal reads and blocks cross-branch reads", async () => {
+  it("limits reversal reads to branch managers and admins", async () => {
     const registrarDb = testEnv.authenticatedContext("registrar-a").firestore();
+    const cashierDb = testEnv.authenticatedContext("cashier-a").firestore();
+    const releaseDb = testEnv.authenticatedContext("release-a").firestore();
     const managerDb = testEnv.authenticatedContext("manager-a").firestore();
     const adminDb = testEnv.authenticatedContext("admin-user").firestore();
 
-    await assertSucceeds(getDoc(doc(registrarDb, "saleReversals/reversal-a")));
+    await assertFails(getDoc(doc(registrarDb, "saleReversals/reversal-a")));
+    await assertFails(getDoc(doc(cashierDb, "saleReversals/reversal-a")));
+    await assertFails(getDoc(doc(releaseDb, "saleReversals/reversal-a")));
     await assertSucceeds(getDoc(doc(managerDb, "saleReversals/reversal-a")));
     await assertSucceeds(getDoc(doc(adminDb, "saleReversals/reversal-b")));
-    await assertFails(getDoc(doc(registrarDb, "saleReversals/reversal-b")));
+    await assertFails(getDoc(doc(managerDb, "saleReversals/reversal-b")));
+  });
+
+  it("keeps financial transactions manager and admin only", async () => {
+    const registrarDb = testEnv.authenticatedContext("registrar-a").firestore();
+    const cashierDb = testEnv.authenticatedContext("cashier-a").firestore();
+    const releaseDb = testEnv.authenticatedContext("release-a").firestore();
+    const managerDb = testEnv.authenticatedContext("manager-a").firestore();
+    const adminDb = testEnv.authenticatedContext("admin-user").firestore();
+
+    await assertFails(getDoc(doc(registrarDb, "financialTransactions/transaction-a")));
+    await assertFails(getDoc(doc(cashierDb, "financialTransactions/transaction-a")));
+    await assertFails(getDoc(doc(releaseDb, "financialTransactions/transaction-a")));
+    await assertSucceeds(getDoc(doc(managerDb, "financialTransactions/transaction-a")));
+    await assertFails(getDoc(doc(managerDb, "financialTransactions/transaction-b")));
+    await assertSucceeds(getDoc(doc(adminDb, "financialTransactions/transaction-b")));
   });
 
   it("allows permitted report summary reads and blocks cross-branch summaries", async () => {

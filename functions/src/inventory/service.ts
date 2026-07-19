@@ -10,6 +10,7 @@ import {
   addBranchProductSchema,
   archiveProductSchema,
   createProductSchema,
+  recordAllocationStockReceiptSchema,
   recordStockReceiptSchema,
   rejectInventoryAdjustmentSchema,
   rejectStockCountSchema,
@@ -135,6 +136,16 @@ function movementData({
 
 function lowStock(onHandQty: number, reservedQty: number, reorderLevel: number) {
   return onHandQty - reservedQty <= reorderLevel;
+}
+
+function stockPoolData(data: FirebaseFirestore.DocumentData | undefined) {
+  return {
+    totalQuantity: positiveInt(data?.totalQuantity),
+    allocatedQuantity: positiveInt(data?.allocatedQuantity),
+    remainingQuantity: positiveInt(data?.remainingQuantity),
+    averageUnitCostKobo: positiveInt(data?.averageUnitCostKobo),
+    remainingStockValueKobo: positiveInt(data?.remainingStockValueKobo),
+  };
 }
 
 function stockRemovalValue(
@@ -377,6 +388,30 @@ export async function addBranchProductAction(actorUid: string | undefined, input
     const p = product.data()!;
     const branchProductRef = adminDb().doc(`branches/${data.branchId}/products/${data.productId}`);
     const inventoryRef = adminDb().doc(`branches/${data.branchId}/inventory/${data.productId}`);
+    const financialRef = adminDb().doc(`branches/${data.branchId}/inventoryFinancials/${data.productId}`);
+    const poolRef = adminDb().doc(`productStockPools/${data.productId}`);
+    const [existingBranchProduct, inventorySnapshot, financialSnapshot, poolSnapshot] = await Promise.all([
+      tx.get(branchProductRef),
+      tx.get(inventoryRef),
+      tx.get(financialRef),
+      tx.get(poolRef),
+    ]);
+
+    const pool = stockPoolData(poolSnapshot.data());
+    if (!poolSnapshot.exists || data.allocationQuantity > pool.remainingQuantity) {
+      throw new HttpsError("failed-precondition", "The allocation exceeds the quantity available to allocate.");
+    }
+
+    const allocationValueKobo = data.allocationQuantity === pool.remainingQuantity
+      ? pool.remainingStockValueKobo
+      : pool.averageUnitCostKobo * data.allocationQuantity;
+    const remainingQuantity = pool.remainingQuantity - data.allocationQuantity;
+    const remainingStockValueKobo = Math.max(0, pool.remainingStockValueKobo - allocationValueKobo);
+    const inventory = inventorySnapshot.data();
+    const onHandBefore = positiveInt(inventory?.onHandQty);
+    const reservedQty = positiveInt(inventory?.reservedQty);
+    const onHandAfter = onHandBefore + data.allocationQuantity;
+    const nextBranchStockValueKobo = positiveInt(financialSnapshot.data()?.stockValueKobo) + allocationValueKobo;
     const response = { id: data.productId, productId: data.productId, branchId: data.branchId };
 
     tx.set(branchProductRef, {
@@ -391,7 +426,7 @@ export async function addBranchProductAction(actorUid: string | undefined, input
       isActive: true,
       updatedAt: FieldValue.serverTimestamp(),
       updatedBy: actor.uid,
-    });
+    }, { merge: true });
     tx.set(adminDb().doc(`branches/${data.branchId}/productControls/${data.productId}`), {
       productId: data.productId,
       minimumPriceKobo: data.minimumPriceKobo,
@@ -404,25 +439,50 @@ export async function addBranchProductAction(actorUid: string | undefined, input
       sku: p.sku,
       productName: p.name,
       unit: p.unit,
-      onHandQty: 0,
-      reservedQty: 0,
-      soldQty: 0,
-      damagedQty: 0,
-      returnedQty: 0,
+      onHandQty: onHandAfter,
+      reservedQty,
+      soldQty: positiveInt(inventory?.soldQty),
+      damagedQty: positiveInt(inventory?.damagedQty),
+      returnedQty: positiveInt(inventory?.returnedQty),
       reorderLevel: data.reorderLevel,
-      isLowStock: lowStock(0, 0, data.reorderLevel),
+      isLowStock: lowStock(onHandAfter, reservedQty, data.reorderLevel),
       isActive: true,
       updatedAt: FieldValue.serverTimestamp(),
       updatedBy: actor.uid,
-    });
-    tx.set(adminDb().doc(`branches/${data.branchId}/inventoryFinancials/${data.productId}`), {
+    }, { merge: true });
+    tx.set(financialRef, {
       productId: data.productId,
-      averageUnitCostKobo: data.defaultCostPriceKobo ?? 0,
-      stockValueKobo: 0,
+      averageUnitCostKobo: onHandAfter > 0
+        ? Math.floor(nextBranchStockValueKobo / onHandAfter)
+        : data.defaultCostPriceKobo ?? 0,
+      stockValueKobo: nextBranchStockValueKobo,
       updatedAt: FieldValue.serverTimestamp(),
       updatedBy: actor.uid,
     });
-    tx.set(adminDb().collection("auditLogs").doc(`addBranchProduct_${data.branchId}_${data.productId}_${keyHash}`), auditData(actor, "branch_product.added", "product", data.productId, data.branchId, null, response));
+    tx.update(poolRef, {
+      allocatedQuantity: pool.allocatedQuantity + data.allocationQuantity,
+      remainingQuantity,
+      remainingStockValueKobo,
+      averageUnitCostKobo: remainingQuantity > 0
+        ? Math.floor(remainingStockValueKobo / remainingQuantity)
+        : 0,
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: actor.uid,
+    });
+    if (data.allocationQuantity > 0) {
+      tx.set(adminDb().collection("stockMovements").doc(`${data.branchId}_central_stock_allocation_${data.productId}_${keyHash}`), movementData({
+        branchId: data.branchId,
+        productId: data.productId,
+        movementType: "central_stock_allocation",
+        quantity: data.allocationQuantity,
+        before: { onHandQty: onHandBefore, reservedQty },
+        after: { onHandQty: onHandAfter, reservedQty },
+        reason: "branch_initial_allocation",
+        actor,
+        keyHash,
+      }));
+    }
+    tx.set(adminDb().collection("auditLogs").doc(`addBranchProduct_${data.branchId}_${data.productId}_${keyHash}`), auditData(actor, existingBranchProduct.exists ? "branch_product.stock_allocated" : "branch_product.added", "product", data.productId, data.branchId, null, response, { allocationQuantity: data.allocationQuantity, allocationValueKobo }));
     tx.set(ref, { actorId: actor.uid, operation: "addBranchProduct", keyHash, entityId: data.productId, responseSnapshot: response, createdAt: FieldValue.serverTimestamp() });
     return response;
   });
@@ -517,6 +577,159 @@ async function readReceiptItems(tx: FirebaseFirestore.Transaction, branchId: str
       productName: String(product.data()?.name ?? ""),
       lineValueKobo: item.quantity * item.unitCostKobo,
     };
+  });
+}
+
+async function readAllocationReceiptItems(
+  tx: FirebaseFirestore.Transaction,
+  items: StockReceiptItemInput[],
+) {
+  const productIds = items.map((item) => item.productId);
+  if (new Set(productIds).size !== productIds.length) {
+    throw new HttpsError("invalid-argument", "Duplicate receipt item.");
+  }
+
+  const productRefs = productIds.map((id) => adminDb().doc(`products/${id}`));
+  const products = await Promise.all(productRefs.map((ref) => tx.get(ref)));
+
+  return items.map((item, index) => {
+    const product = products[index];
+    if (!product.exists || product.data()?.isActive !== true) {
+      throw new HttpsError("failed-precondition", "Product is inactive or unavailable.");
+    }
+
+    return {
+      ...item,
+      sku: String(product.data()?.sku ?? ""),
+      productName: String(product.data()?.name ?? ""),
+      unit: String(product.data()?.unit ?? ""),
+      lineValueKobo: item.quantity * item.unitCostKobo,
+    };
+  });
+}
+
+export async function recordAllocationStockReceiptAction(
+  actorUid: string | undefined,
+  input: unknown,
+) {
+  const actor = await requireActor(actorUid);
+  ensureRole(actor, ["admin", "super_admin"]);
+  const data = recordAllocationStockReceiptSchema.parse(input);
+  const { keyHash, ref } = idemRef(
+    actor,
+    "recordAllocationStockReceipt",
+    data.idempotencyKey,
+  );
+  const receiptRef = adminDb().collection("stockReceipts").doc();
+
+  return adminDb().runTransaction(async (tx) => {
+    const existing = await tx.get(ref);
+    if (existing.exists) return existing.data()?.responseSnapshot;
+
+    const receiptItems = await readAllocationReceiptItems(tx, data.items);
+    const poolRefs = receiptItems.map((item) =>
+      adminDb().doc(`productStockPools/${item.productId}`),
+    );
+    const pools = await Promise.all(poolRefs.map((poolRef) => tx.get(poolRef)));
+    const number = receiptNumber();
+    const totalValueKobo = receiptItems.reduce(
+      (sum, item) => sum + item.lineValueKobo,
+      0,
+    );
+    const response = {
+      id: receiptRef.id,
+      receiptId: receiptRef.id,
+      receiptNumber: number,
+      totalValueKobo,
+    };
+
+    receiptItems.forEach((item, index) => {
+      const before = stockPoolData(pools[index].data());
+      const remainingQuantity = before.remainingQuantity + item.quantity;
+      const remainingStockValueKobo =
+        before.remainingStockValueKobo + item.lineValueKobo;
+
+      tx.set(
+        poolRefs[index],
+        {
+          productId: item.productId,
+          sku: item.sku,
+          productName: item.productName,
+          unit: item.unit,
+          totalQuantity: before.totalQuantity + item.quantity,
+          allocatedQuantity: before.allocatedQuantity,
+          remainingQuantity,
+          averageUnitCostKobo: Math.floor(
+            remainingStockValueKobo / remainingQuantity,
+          ),
+          remainingStockValueKobo,
+          updatedAt: FieldValue.serverTimestamp(),
+          updatedBy: actor.uid,
+        },
+        { merge: true },
+      );
+      tx.set(
+        adminDb()
+          .collection("centralStockMovements")
+          .doc(`${receiptRef.id}_${item.productId}`),
+        {
+          productId: item.productId,
+          stockReceiptId: receiptRef.id,
+          movementType: "allocation_stock_received",
+          quantity: item.quantity,
+          unitCostKobo: item.unitCostKobo,
+          stockValueKobo: item.lineValueKobo,
+          remainingBefore: before.remainingQuantity,
+          remainingAfter: remainingQuantity,
+          performedBy: actor.uid,
+          createdAt: FieldValue.serverTimestamp(),
+          idempotencyKeyHash: keyHash,
+        },
+      );
+    });
+
+    tx.set(receiptRef, {
+      receiptNumber: number,
+      destinationType: "allocation_pool",
+      branchId: null,
+      supplierName: data.supplierName ?? null,
+      supplierReference: data.supplierReference ?? null,
+      deliveryReference: data.deliveryReference ?? null,
+      notes: data.notes ?? null,
+      items: receiptItems,
+      totalValueKobo,
+      status: "posted",
+      receivedBy: actor.uid,
+      receivedAt: FieldValue.serverTimestamp(),
+      createdBy: actor.uid,
+      createdAt: FieldValue.serverTimestamp(),
+      idempotencyKeyHash: keyHash,
+    });
+    tx.set(
+      adminDb()
+        .collection("auditLogs")
+        .doc(`recordAllocationStockReceipt_${receiptRef.id}_${keyHash}`),
+      auditData(
+        actor,
+        "allocation_stock.received",
+        "stockReceipt",
+        receiptRef.id,
+        null,
+        null,
+        response,
+        { itemCount: receiptItems.length },
+      ),
+    );
+    tx.set(ref, {
+      actorId: actor.uid,
+      operation: "recordAllocationStockReceipt",
+      keyHash,
+      entityId: receiptRef.id,
+      responseSnapshot: response,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    return response;
   });
 }
 

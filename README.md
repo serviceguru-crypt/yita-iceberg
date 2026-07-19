@@ -94,7 +94,7 @@ Copy the relevant example file and fill in real values:
 cp .env.local.example .env.local
 ```
 
-Use `.env.staging.example` for staging and `.env.production.example` for production. Never commit real environment files, service account JSON, private keys, or App Check debug tokens.
+Use `.env.production.example` for production. Never commit real environment files, service account JSON, private keys, or App Check debug tokens.
 
 ## Phase 5 Operational UI
 
@@ -184,11 +184,11 @@ CSV export is implemented through `exportReport`. It returns server-authorized C
 Production readiness additions:
 
 - Firebase App Hosting config in `apphosting.yaml`.
-- Staging/production environment examples.
+- Local emulator and production environment examples.
 - App Check client initialization and callable enforcement flag.
 - Structured Cloud Functions logging with sensitive-field redaction.
 - Scheduled `expireStaleOrders` and `rebuildReportSummariesScheduled`.
-- GitHub Actions CI and manual staging/production deploy workflows.
+- GitHub Actions CI and a manually approved production deploy workflow.
 - Production-safe smoke test script.
 - Backup, monitoring, deployment, CI/CD, release, and cost documentation.
 - Admin runbooks under `docs/runbooks/`.
@@ -196,15 +196,11 @@ Production readiness additions:
 Deployment commands:
 
 ```bash
-npm run firebase:use:staging
-npm run deploy:rules:staging
-npm run deploy:indexes:staging
-npm run deploy:functions:staging
-
-npm run firebase:use:production
-npm run deploy:rules:production
-npm run deploy:indexes:production
-npm run deploy:functions:production
+npm run firebase:use:yita
+npm run verify:production
+npm run deploy:rules:yita
+npm run deploy:indexes:yita
+npm run deploy:functions:yita
 ```
 
 Firebase App Hosting rollout is configured separately through Firebase Console or Google Cloud and uses `apphosting.yaml`.
@@ -218,8 +214,8 @@ npm run build: passed
 npm run functions:typecheck: passed
 npm run functions:lint: passed
 npm run functions:build: passed
-npm run rules:test: 1 file passed, 22 tests passed
-npm run functions:test: 6 files passed, 57 tests passed
+npm run rules:test: 1 file passed, 23 tests passed
+npm run functions:test: 6 files passed, 61 tests passed
 npm run smoke:test -- --dry-run: passed
 git diff --check: passed
 ```
@@ -233,7 +229,7 @@ For local emulator use:
 ```bash
 FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 \
 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 \
-FIREBASE_PROJECT_ID=yita-iceberg-dev \
+FIREBASE_PROJECT_ID=yita-iceberg \
 BOOTSTRAP_SUPER_ADMIN_EMAIL=admin@example.com \
 BOOTSTRAP_SUPER_ADMIN_NAME="YITA Super Admin" \
 BOOTSTRAP_CONFIRM=true \
@@ -334,7 +330,7 @@ See [Environment](docs/environment.md). Production secrets must never be committ
 
 Configure scheduled Firestore exports before production launch. See [Backup And Recovery](docs/backup-and-recovery.md).
 
-Run staging smoke tests after deploy:
+Run a read-only smoke test after deploy:
 
 ```bash
 npm run smoke:test -- --dry-run

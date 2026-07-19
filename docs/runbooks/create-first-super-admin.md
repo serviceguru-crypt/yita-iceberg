@@ -3,7 +3,7 @@
 Use only during initial setup or emergency recovery.
 
 1. Confirm the target Firebase project.
-2. Set secure environment variables from `.env.production.example` or `.env.staging.example`.
+2. Set secure environment variables from `.env.production.example`.
 3. Set:
 
 ```bash

@@ -25,7 +25,7 @@ export function adminStorageBucket() {
     process.env.FIREBASE_STORAGE_BUCKET ||
     (process.env.GCLOUD_PROJECT
       ? `${process.env.GCLOUD_PROJECT}.appspot.com`
-      : "yita-iceberg-dev.appspot.com");
+      : "yita-iceberg.firebasestorage.app");
 
   return getStorage().bucket(bucketName);
 }

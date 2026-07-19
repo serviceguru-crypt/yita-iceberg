@@ -201,6 +201,6 @@ Before deployment:
 - Add error monitoring and structured logs.
 - Add rate limiting or abuse controls.
 - Add backup and recovery documentation.
-- Add staging and production environment configuration.
+- Add local emulator and production environment configuration.
 - Add Firebase App Hosting configuration.
 - Add GitHub Actions CI for lint, type check, tests, and build.

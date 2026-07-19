@@ -153,7 +153,7 @@ export async function POST(request: Request) {
 
     await branchRef.set(branch);
     await adminDb().collection("auditLogs").add({
-      actorUid: user.uid,
+      actorId: user.uid,
       actorRole: user.platformRole,
       action: "branch.created",
       entityType: "branch",

@@ -6,6 +6,11 @@ on:
       release_ref:
         description: Main branch commit SHA or release tag to deploy
         required: true
+      run_live_smoke:
+        description: Run authenticated smoke checks after deployment
+        required: true
+        default: false
+        type: boolean
 
 jobs:
   deploy-production:
@@ -24,6 +29,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm --prefix functions ci
+      - run: npx playwright install --with-deps chromium
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run build
@@ -32,6 +38,25 @@ jobs:
       - run: npm run functions:build
       - run: npm run rules:test
       - run: npm run functions:test
+      - run: npm run test:e2e
+      - name: Verify production configuration
+        run: npm run verify:production
+        env:
+          APP_ENV: production
+          APP_BASE_URL: ${{ vars.APP_BASE_URL }}
+          FIREBASE_PROJECT_ID: yita-iceberg
+          NEXT_PUBLIC_FIREBASE_PROJECT_ID: yita-iceberg
+          NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
+          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ vars.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
+          NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ vars.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
+          NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
+          NEXT_PUBLIC_FIREBASE_APP_ID: ${{ vars.NEXT_PUBLIC_FIREBASE_APP_ID }}
+          NEXT_PUBLIC_FIREBASE_APP_CHECK_SITE_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_CHECK_SITE_KEY }}
+          NEXT_PUBLIC_USE_FIREBASE_EMULATORS: "false"
+          NEXT_PUBLIC_ENABLE_APP_CHECK: "true"
+          NEXT_PUBLIC_APP_CHECK_DEBUG_TOKEN: ""
+          ENABLE_APP_CHECK_ENFORCEMENT: "true"
+          ENABLE_REPORT_SUMMARY_REBUILD: "true"
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -39,20 +64,27 @@ jobs:
           service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
       - name: Deploy rules and indexes
         run: |
-          npx firebase-tools deploy --only firestore:rules,storage --project production
-          npx firebase-tools deploy --only firestore:indexes --project production
+          npx firebase-tools deploy --only firestore:rules,storage --project yita
+          npx firebase-tools deploy --only firestore:indexes --project yita
       - name: Deploy functions
-        run: npx firebase-tools deploy --only functions --project production
-      - name: Smoke dry run
-        run: npm run smoke:test -- --dry-run
+        run: npx firebase-tools deploy --only functions --project yita
+      - name: Verify backups and alerts
+        run: npm run verify:cloud-ops
+        env:
+          FIREBASE_PROJECT_ID: yita-iceberg
+      - name: Live authenticated smoke test
+        if: ${{ inputs.run_live_smoke }}
+        run: npm run smoke:test
         env:
           APP_ENV: production
           APP_BASE_URL: ${{ vars.APP_BASE_URL }}
-          FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+          FIREBASE_PROJECT_ID: yita-iceberg
           NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
           NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ vars.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
           NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ vars.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
           NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
           NEXT_PUBLIC_FIREBASE_APP_ID: ${{ vars.NEXT_PUBLIC_FIREBASE_APP_ID }}
+          SMOKE_TEST_EMAIL: ${{ secrets.SMOKE_TEST_EMAIL }}
+          SMOKE_TEST_PASSWORD: ${{ secrets.SMOKE_TEST_PASSWORD }}
           SMOKE_TEST_ALLOW_PRODUCTION: "true"
           SMOKE_TEST_PRODUCTION_CONFIRMATION: RUN_SMOKE_TESTS_AGAINST_PRODUCTION

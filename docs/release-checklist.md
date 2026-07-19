@@ -1,14 +1,14 @@
 # Release Checklist
 
-## Before Staging
+## Before Release
 
 - All required checks pass locally and in CI.
-- `.env.staging` values are configured in App Hosting/Firebase.
+- Production values are configured in App Hosting/Firebase.
 - App Check provider is configured.
 - Firestore and Storage rules tests pass.
 - Indexes are deployed and built.
 
-## Staging Validation
+## Controlled Validation
 
 - App loads.
 - Sign-in works.
@@ -23,7 +23,7 @@
 
 ## Before Production
 
-- Staging smoke tests passed.
+- Controlled smoke tests passed.
 - Backup bucket exists and test export has run.
 - Monitoring alerts are configured.
 - First super-admin runbook reviewed.
@@ -35,5 +35,5 @@
 - Confirm App Hosting healthy rollout.
 - Confirm functions healthy.
 - Confirm no rules/index deploy errors.
-- Run smoke test dry-run.
+- Run the authenticated smoke test when approved.
 - Monitor errors and permission-denied spikes.

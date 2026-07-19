@@ -13,6 +13,7 @@ import {
   approveInventoryAdjustmentAction,
   approveStockCountAction,
   createProductAction,
+  recordAllocationStockReceiptAction,
   recordStockReceiptAction,
   rejectInventoryAdjustmentAction,
   requestInventoryAdjustmentAction,
@@ -23,18 +24,13 @@ import {
 } from "../src/inventory/service";
 
 function init() {
-  if (getApps().length === 0) initializeApp({ projectId: "yita-iceberg-dev" });
+  if (getApps().length === 0) initializeApp({ projectId: "yita-iceberg" });
 }
 
 async function clearFirestore() {
   const db = getFirestore();
   const collections = await db.listCollections();
-  await Promise.all(
-    collections.map(async (collection) => {
-      const snapshot = await collection.get();
-      await Promise.all(snapshot.docs.map((doc) => doc.ref.delete()));
-    }),
-  );
+  await Promise.all(collections.map((collection) => db.recursiveDelete(collection)));
 }
 
 async function clearAuthUsers() {
@@ -92,6 +88,7 @@ async function createBranchProduct({
   minimumPriceKobo = 50_000,
   defaultCostPriceKobo = 40_000,
   reorderLevel = 5,
+  allocationQuantity = 0,
 } = {}) {
   const product = await createProductAction("admin", {
     sku,
@@ -100,6 +97,14 @@ async function createBranchProduct({
     barcode: `${sku}-BAR`,
     idempotencyKey: `idem-product-${sku}`,
   }) as { productId: string };
+  await recordAllocationStockReceiptAction("admin", {
+    items: [{
+      productId: product.productId,
+      quantity: 20,
+      unitCostKobo: defaultCostPriceKobo,
+    }],
+    idempotencyKey: `idem-central-stock-${sku}`,
+  });
   await addBranchProductAction("admin", {
     branchId: "branch-a",
     productId: product.productId,
@@ -107,6 +112,7 @@ async function createBranchProduct({
     minimumPriceKobo,
     defaultCostPriceKobo,
     reorderLevel,
+    allocationQuantity,
     idempotencyKey: `idem-branch-product-${sku}`,
   });
   return product.productId;
@@ -182,21 +188,111 @@ describe("inventory product and branch setup", () => {
     expect(firstUniqueSku.data()?.productId).toBe(first.productId);
   });
 
-  it("adds a branch product with zero stock and protected controls", async () => {
-    const productId = await createBranchProduct();
+  it("allocates central stock to a branch with protected controls", async () => {
+    const productId = await createBranchProduct({ allocationQuantity: 10 });
     const db = getFirestore();
     const inventory = await db.doc(`branches/branch-a/inventory/${productId}`).get();
     const controls = await db.doc(`branches/branch-a/productControls/${productId}`).get();
     const financials = await db.doc(`branches/branch-a/inventoryFinancials/${productId}`).get();
 
-    expect(inventory.data()?.onHandQty).toBe(0);
-    expect(inventory.data()?.isLowStock).toBe(true);
+    const pool = await db.doc(`productStockPools/${productId}`).get();
+
+    expect(inventory.data()?.onHandQty).toBe(10);
+    expect(inventory.data()?.isLowStock).toBe(false);
     expect(controls.data()?.minimumPriceKobo).toBe(50_000);
-    expect(financials.data()?.stockValueKobo).toBe(0);
+    expect(financials.data()?.stockValueKobo).toBe(400_000);
+    expect(pool.data()?.totalQuantity).toBe(20);
+    expect(pool.data()?.allocatedQuantity).toBe(10);
+    expect(pool.data()?.remainingQuantity).toBe(10);
+  });
+
+  it("prevents branch allocation above remaining central stock", async () => {
+    const product = await createProductAction("admin", {
+      sku: "SKU-LIMIT",
+      name: "Limited Product",
+      unit: "piece",
+      idempotencyKey: "idem-product-limit",
+    }) as { productId: string };
+    await recordAllocationStockReceiptAction("admin", {
+      items: [{
+        productId: product.productId,
+        quantity: 3,
+        unitCostKobo: 25_000,
+      }],
+      idempotencyKey: "idem-central-limit",
+    });
+
+    await expect(addBranchProductAction("admin", {
+      branchId: "branch-a",
+      productId: product.productId,
+      sellingPriceKobo: 50_000,
+      minimumPriceKobo: 40_000,
+      defaultCostPriceKobo: 25_000,
+      reorderLevel: 1,
+      allocationQuantity: 4,
+      idempotencyKey: "idem-branch-limit",
+    })).rejects.toMatchObject({ code: "failed-precondition" });
+  });
+
+  it("can allocate central stock to an existing branch product", async () => {
+    const productId = await createBranchProduct({ allocationQuantity: 4 });
+
+    await addBranchProductAction("admin", {
+      branchId: "branch-a",
+      productId,
+      sellingPriceKobo: 100_000,
+      minimumPriceKobo: 50_000,
+      defaultCostPriceKobo: 40_000,
+      reorderLevel: 5,
+      allocationQuantity: 3,
+      idempotencyKey: "idem-repeat-allocation",
+    });
+
+    const inventory = await getFirestore().doc(`branches/branch-a/inventory/${productId}`).get();
+    const pool = await getFirestore().doc(`productStockPools/${productId}`).get();
+
+    expect(inventory.data()?.onHandQty).toBe(7);
+    expect(pool.data()?.allocatedQuantity).toBe(7);
+    expect(pool.data()?.remainingQuantity).toBe(13);
   });
 });
 
 describe("stock receipts and valuation", () => {
+  it("posts allocation stock through one receipt-producing path", async () => {
+    const product = await createProductAction("admin", {
+      name: "Allocation Product",
+      unit: "piece",
+      idempotencyKey: "idem-allocation-product",
+    }) as { productId: string };
+    const input = {
+      supplierName: "Allocation Supplier",
+      items: [{ productId: product.productId, quantity: 6, unitCostKobo: 30_000 }],
+      idempotencyKey: "idem-allocation-receipt",
+    };
+
+    await expect(
+      recordAllocationStockReceiptAction("manager-a", input),
+    ).rejects.toMatchObject({ code: "permission-denied" });
+
+    const receipt = await recordAllocationStockReceiptAction("admin", input) as {
+      receiptId: string;
+    };
+    await recordAllocationStockReceiptAction("admin", input);
+
+    const db = getFirestore();
+    const receiptSnapshot = await db.doc(`stockReceipts/${receipt.receiptId}`).get();
+    const pool = await db.doc(`productStockPools/${product.productId}`).get();
+    const movements = await db
+      .collection("centralStockMovements")
+      .where("stockReceiptId", "==", receipt.receiptId)
+      .get();
+
+    expect(receiptSnapshot.data()?.destinationType).toBe("allocation_pool");
+    expect(receiptSnapshot.data()?.totalValueKobo).toBe(180_000);
+    expect(pool.data()?.remainingQuantity).toBe(6);
+    expect(movements.size).toBe(1);
+  });
+
   it("posts stock receipt, keeps reserved stock unchanged, and is idempotent", async () => {
     const productId = await createBranchProduct();
     const input = {

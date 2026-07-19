@@ -29,7 +29,7 @@ function initializeAdmin() {
   const projectId =
     process.env.FIREBASE_PROJECT_ID ||
     process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ||
-    "yita-iceberg-dev";
+    "yita-iceberg";
 
   if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
     initializeApp({

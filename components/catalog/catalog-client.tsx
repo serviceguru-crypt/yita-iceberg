@@ -40,6 +40,23 @@ type BranchProductResponse = {
   message?: string;
   productId?: string;
   branchId?: string;
+  allocatedQuantity?: number;
+  remainingQuantity?: number;
+};
+
+type StockPool = {
+  productId: string;
+  totalQuantity: number;
+  allocatedQuantity: number;
+  remainingQuantity: number;
+  averageUnitCostKobo: number;
+  remainingStockValueKobo: number;
+};
+
+type StockPoolResponse = {
+  ok?: boolean;
+  message?: string;
+  pool?: StockPool;
 };
 
 async function fetchProducts() {
@@ -104,6 +121,7 @@ async function addBranchProduct(input: {
   minimumPriceKobo: number;
   defaultCostPriceKobo: number;
   reorderLevel: number;
+  allocationQuantity: number;
   idempotencyKey: string;
 }) {
   const response = await fetch("/api/catalog/branch-products", {
@@ -119,6 +137,20 @@ async function addBranchProduct(input: {
   }
 
   return result;
+}
+
+async function fetchStockPool(productId: string) {
+  const response = await fetch(
+    `/api/catalog/stock-pools?productId=${encodeURIComponent(productId)}`,
+    { cache: "no-store", credentials: "same-origin" },
+  );
+  const result = (await response.json()) as StockPoolResponse;
+
+  if (!response.ok || !result.ok || !result.pool) {
+    throw new Error(result.message || "Unable to load stock available for allocation.");
+  }
+
+  return result.pool;
 }
 
 function AdminOnly({ children }: { children: React.ReactNode }) {
@@ -248,20 +280,57 @@ export function ProductDetailClient({ productId }: { productId: string }) {
 
 function ProductDetail({ productId }: { productId: string }) {
   const [product, setProduct] = useState<ProductDocument | null>(null);
+  const [name, setName] = useState("");
+  const [unit, setUnit] = useState("");
+  const [description, setDescription] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [barcode, setBarcode] = useState("");
+  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        setProduct(await fetchProduct(productId));
-        setMessage(null);
-      } catch (error) {
-        setMessage(error instanceof Error ? error.message : "Unable to load product.");
-      }
-    }
+  function populateFields(next: ProductDocument) {
+    setProduct(next);
+    setName(next.name);
+    setUnit(next.unit);
+    setDescription(next.description ?? "");
+    setCategoryId(next.categoryId ?? "");
+    setBarcode(next.barcode ?? "");
+  }
 
+  async function load() {
+    try {
+      populateFields(await fetchProduct(productId));
+      setMessage(null);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to load product.");
+    }
+  }
+
+  useEffect(() => {
     void load();
   }, [productId]);
+
+  async function save() {
+    setSaving(true);
+    setMessage(null);
+    try {
+      await callFunction("updateProduct", {
+        productId,
+        name,
+        unit,
+        description,
+        categoryId,
+        barcode,
+        idempotencyKey: createIdempotencyKey("update-product"),
+      });
+      await load();
+      setMessage("Product details updated.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to update product.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function archive() {
     if (!window.confirm("Archive this product? It will be unavailable for new branch setup.")) return;
@@ -275,7 +344,38 @@ function ProductDetail({ productId }: { productId: string }) {
 
   if (!product) return <OperationState title="Loading product" />;
 
-  return <FormShell title={product.name} backHref="/catalog/products">{message ? <OperationState detail={message} title="Updated" /> : null}<div className="grid gap-4 md:grid-cols-[1fr_auto]"><div className="rounded-lg border bg-card p-4 text-sm"><p>{product.sku} · {product.unit}</p><p className="text-muted-foreground">Barcode: {product.barcode || "None"}</p><p>Status: {product.isActive === false ? "Archived" : "Active"}</p></div>{product.qrCodePayload ? <div className="print-surface app-surface rounded-xl border p-4"><QrCode alt={`Product QR code for ${product.sku}`} payload={product.qrCodePayload} /><div className="mt-3 flex justify-center"><QrPrintButton payload={product.qrCodePayload} /></div></div> : <OperationState detail="This product was created before QR payload generation was enabled." title="QR unavailable" />}</div><Button disabled={product.isActive === false} onClick={() => void archive().catch((err) => setMessage(err instanceof Error ? err.message : "Archive failed"))} type="button" variant="destructive">Archive product</Button></FormShell>;
+  return (
+    <FormShell title={product.name} backHref="/catalog/products">
+      {message ? <OperationState detail={message} title="Product update" /> : null}
+      <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="grid gap-3 rounded-lg border bg-card p-4">
+          <div className="text-sm">
+            <p className="font-medium">SKU {product.sku}</p>
+            <p className="text-muted-foreground">Status: {product.isActive === false ? "Archived" : "Active"}</p>
+          </div>
+          <Field label="Name"><input className="h-9 rounded-md border bg-background px-3" disabled={product.isActive === false} onChange={(event) => setName(event.target.value)} value={name} /></Field>
+          <Field label="Unit"><input className="h-9 rounded-md border bg-background px-3" disabled={product.isActive === false} onChange={(event) => setUnit(event.target.value)} value={unit} /></Field>
+          <Field label="Category"><input className="h-9 rounded-md border bg-background px-3" disabled={product.isActive === false} onChange={(event) => setCategoryId(event.target.value)} value={categoryId} /></Field>
+          <Field label="Barcode"><input className="h-9 rounded-md border bg-background px-3" disabled={product.isActive === false} onChange={(event) => setBarcode(event.target.value)} value={barcode} /></Field>
+          <Field label="Description"><textarea className="min-h-24 rounded-md border bg-background px-3 py-2" disabled={product.isActive === false} onChange={(event) => setDescription(event.target.value)} value={description} /></Field>
+          <Button disabled={saving || product.isActive === false || !name.trim() || !unit.trim()} onClick={() => void save()} type="button">
+            {saving ? "Saving" : "Save changes"}
+          </Button>
+        </div>
+        {product.qrCodePayload ? (
+          <div className="print-surface app-surface h-fit rounded-xl border p-4">
+            <QrCode alt={`Product QR code for ${product.sku}`} payload={product.qrCodePayload} />
+            <div className="mt-3 flex justify-center"><QrPrintButton payload={product.qrCodePayload} /></div>
+          </div>
+        ) : (
+          <OperationState detail="This product was created before QR payload generation was enabled." title="QR unavailable" />
+        )}
+      </div>
+      <Button disabled={product.isActive === false} onClick={() => void archive().catch((err) => setMessage(err instanceof Error ? err.message : "Archive failed"))} type="button" variant="destructive">
+        Archive product
+      </Button>
+    </FormShell>
+  );
 }
 
 export function BranchProductsClient() {
@@ -289,13 +389,16 @@ export function BranchProductsClient() {
 }
 
 function BranchProducts() {
-  const { selectedBranchId } = useBranchContext();
+  const { selectedBranch, selectedBranchId } = useBranchContext();
   const [catalog, setCatalog] = useState<ProductDocument[]>([]);
   const [productId, setProductId] = useState("");
   const [sellingPrice, setSellingPrice] = useState("");
   const [minimumPrice, setMinimumPrice] = useState("");
   const [defaultCost, setDefaultCost] = useState("");
   const [reorderLevel, setReorderLevel] = useState(0);
+  const [allocationQuantity, setAllocationQuantity] = useState(0);
+  const [stockPool, setStockPool] = useState<StockPool | null>(null);
+  const [loadingPool, setLoadingPool] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -313,12 +416,61 @@ function BranchProducts() {
     void load();
   }, []);
 
+  useEffect(() => {
+    if (!productId) {
+      setStockPool(null);
+      return;
+    }
+
+    setLoadingPool(true);
+    fetchStockPool(productId)
+      .then((pool) => {
+        setStockPool(pool);
+        setAllocationQuantity(0);
+        setMessage(null);
+      })
+      .catch((error) => setMessage(error instanceof Error ? error.message : "Unable to load stock available for allocation."))
+      .finally(() => setLoadingPool(false));
+  }, [productId]);
+
   async function add() {
-    if (!selectedBranchId || !window.confirm("Add this product to the active branch? Initial stock remains zero.")) return;
-    await addBranchProduct({ branchId: selectedBranchId, productId, sellingPriceKobo: parseNairaToKobo(sellingPrice), minimumPriceKobo: parseNairaToKobo(minimumPrice), defaultCostPriceKobo: parseNairaToKobo(defaultCost), reorderLevel, idempotencyKey: createIdempotencyKey("branch-product") });
-    setMessage("Branch product added with zero initial stock.");
+    if (!selectedBranchId || !window.confirm(`Allocate ${allocationQuantity} unit(s) to ${selectedBranch?.name ?? "the active branch"}?`)) return;
+    const result = await addBranchProduct({ branchId: selectedBranchId, productId, sellingPriceKobo: parseNairaToKobo(sellingPrice), minimumPriceKobo: parseNairaToKobo(minimumPrice), defaultCostPriceKobo: parseNairaToKobo(defaultCost), reorderLevel, allocationQuantity, idempotencyKey: createIdempotencyKey("branch-product") });
+    setStockPool((current) => current ? {
+      ...current,
+      allocatedQuantity: current.allocatedQuantity + allocationQuantity,
+      remainingQuantity: result.remainingQuantity ?? current.remainingQuantity - allocationQuantity,
+    } : current);
+    setMessage(`${allocationQuantity} unit(s) allocated to ${selectedBranch?.name ?? "the active branch"}.`);
+    setAllocationQuantity(0);
   }
-  return <FormShell title="Branch product setup" backHref="/catalog/products">{message ? <OperationState detail={message} title="Saved" /> : null}<Field label="Product"><select className="h-9 rounded-md border bg-background px-3" onChange={(e) => setProductId(e.target.value)} value={productId}><option value="">Select product</option>{catalog.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.sku}</option>)}</select></Field><Field label="Selling price"><input className="h-9 rounded-md border bg-background px-3" onChange={(e) => setSellingPrice(e.target.value)} value={sellingPrice} /></Field><Field label="Protected minimum price"><input className="h-9 rounded-md border bg-background px-3" onChange={(e) => setMinimumPrice(e.target.value)} value={minimumPrice} /></Field><Field label="Default cost control"><input className="h-9 rounded-md border bg-background px-3" onChange={(e) => setDefaultCost(e.target.value)} value={defaultCost} /></Field><Field label="Reorder level"><input className="h-9 rounded-md border bg-background px-3" min={0} onChange={(e) => setReorderLevel(Number(e.target.value) || 0)} type="number" value={reorderLevel} /></Field><Button disabled={!productId || !sellingPrice || !minimumPrice} onClick={() => void add().catch((err) => setMessage(err instanceof Error ? err.message : "Save failed"))} type="button">Add to branch</Button></FormShell>;
+  return <FormShell title="Branch product setup" backHref="/catalog/products">
+    {message ? <OperationState detail={message} title="Stock updated" /> : null}
+    <div className="app-surface rounded-lg border p-4">
+      <p className="text-sm font-semibold">Active branch</p>
+      <p className="text-sm text-muted-foreground">{selectedBranch?.name ?? "Select a branch from the navigation first."}</p>
+    </div>
+    <Field label="Product"><select className="h-9 rounded-md border bg-background px-3" onChange={(e) => setProductId(e.target.value)} value={productId}><option value="">Select product</option>{catalog.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.sku}</option>)}</select></Field>
+    {loadingPool ? <OperationState title="Loading allocation stock" /> : null}
+    {stockPool ? <>
+      <div className="grid grid-cols-3 gap-2">
+        <StockMetric label="Total received" value={stockPool.totalQuantity} />
+        <StockMetric label="Allocated to branches" value={stockPool.allocatedQuantity} />
+        <StockMetric label="Available to allocate" value={stockPool.remainingQuantity} />
+      </div>
+      {stockPool.remainingQuantity === 0 ? <Button asChild variant="outline"><Link href="/inventory/receipts/new?destination=allocation">Receive stock for allocation</Link></Button> : null}
+      <Field label={`Quantity for ${selectedBranch?.name ?? "active branch"}`}><input className="h-9 rounded-md border bg-background px-3" max={stockPool.remainingQuantity} min={1} onChange={(e) => setAllocationQuantity(Number(e.target.value) || 0)} type="number" value={allocationQuantity || ""} /></Field>
+    </> : null}
+    <Field label="Selling price"><input className="h-9 rounded-md border bg-background px-3" onChange={(e) => setSellingPrice(e.target.value)} value={sellingPrice} /></Field>
+    <Field label="Protected minimum price"><input className="h-9 rounded-md border bg-background px-3" onChange={(e) => setMinimumPrice(e.target.value)} value={minimumPrice} /></Field>
+    <Field label="Default unit cost"><input className="h-9 rounded-md border bg-background px-3" onChange={(e) => setDefaultCost(e.target.value)} value={defaultCost} /></Field>
+    <Field label="Reorder level"><input className="h-9 rounded-md border bg-background px-3" min={0} onChange={(e) => setReorderLevel(Number(e.target.value) || 0)} type="number" value={reorderLevel} /></Field>
+    <Button disabled={!productId || !sellingPrice || !minimumPrice || allocationQuantity <= 0 || allocationQuantity > (stockPool?.remainingQuantity ?? 0)} onClick={() => void add().catch((err) => setMessage(err instanceof Error ? err.message : "Save failed"))} type="button">Allocate to branch</Button>
+  </FormShell>;
+}
+
+function StockMetric({ label, value }: { label: string; value: number }) {
+  return <div className="app-surface min-w-0 rounded-lg border p-3 text-center"><p className="text-xl font-semibold">{value}</p><p className="text-xs text-muted-foreground">{label}</p></div>;
 }
 
 function FormShell({ title, backHref, children }: { title: string; backHref: string; children: React.ReactNode }) {

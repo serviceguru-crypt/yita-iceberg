@@ -1,8 +1,6 @@
 {
   "projects": {
     "default": "yita-iceberg",
-    "yita": "yita-iceberg",
-    "staging": "yita-iceberg-staging",
-    "production": "yita-iceberg-production"
+    "yita": "yita-iceberg"
   }
 }

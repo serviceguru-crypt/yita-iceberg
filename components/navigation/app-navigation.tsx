@@ -348,7 +348,7 @@ function BottomNavigation({
       {moreOpen && overflowItems.length > 0 ? (
         <div
           aria-modal="true"
-          className="bottom-more-dialog fixed inset-0 z-[70] px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-6"
+          className="bottom-more-dialog fixed inset-0 z-[70] flex flex-col justify-end px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-6"
           role="dialog"
         >
           <button

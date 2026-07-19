@@ -20,13 +20,9 @@ npm run functions:test
 git diff --check
 ```
 
-## Staging
-
-`deploy-staging.yml` runs checks, authenticates with Workload Identity Federation, then deploys rules, indexes, and functions to the staging Firebase project. App Hosting rollout is handled by the Firebase App Hosting backend connected to the staging branch.
-
 ## Production
 
-`deploy-production.yml` is manual only and uses the GitHub `production` environment for approval. It deploys a supplied release ref after all checks pass. It does not bootstrap users or run destructive scripts.
+`deploy-production.yml` is manual only and uses the GitHub `production` environment for approval. It deploys a supplied release ref to `yita-iceberg` after all checks pass, verifies backup and monitoring controls, and can run an authenticated smoke test when explicitly requested. It does not bootstrap users or run destructive scripts.
 
 ## Required Secrets
 

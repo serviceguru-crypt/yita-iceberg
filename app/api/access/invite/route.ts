@@ -141,7 +141,7 @@ export async function POST(request: Request) {
       isActive: true,
     });
     await adminDb().collection("auditLogs").add({
-      actorUid: actor.uid,
+      actorId: actor.uid,
       actorRole: actor.platformRole,
       action: "user.provisioned",
       entityType: "user",

@@ -154,7 +154,8 @@ export type StockMovementDocument = {
 export type StockReceiptDocument = {
   id: string;
   receiptNumber: string;
-  branchId: string;
+  branchId?: string | null;
+  destinationType?: "branch" | "allocation_pool";
   supplierName?: string | null;
   supplierReference?: string | null;
   deliveryReference?: string | null;

@@ -19,6 +19,7 @@ export type StockMovementType =
   | "reservation_released"
   | "stock_out"
   | "stock_received"
+  | "central_stock_allocation"
   | "inventory_increase_adjustment"
   | "inventory_decrease_adjustment"
   | "damage_write_off"

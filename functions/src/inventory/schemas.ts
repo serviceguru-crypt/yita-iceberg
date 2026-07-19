@@ -25,7 +25,7 @@ export const updateProductSchema = z.object({
   unit: z.string().trim().min(1).max(40).optional(),
   description: optionalText,
   categoryId: z.string().trim().max(120).optional(),
-  barcode: z.string().trim().min(1).max(120).optional(),
+  barcode: z.string().trim().max(120).optional(),
   isActive: z.boolean().optional(),
   idempotencyKey,
 });
@@ -42,6 +42,7 @@ export const addBranchProductSchema = z.object({
   minimumPriceKobo: money,
   defaultCostPriceKobo: money.optional(),
   reorderLevel: z.number().int().min(0).default(0),
+  allocationQuantity: nonNegativeQty.default(0),
   idempotencyKey,
 });
 
@@ -70,6 +71,15 @@ export const stockReceiptItemSchema = z.object({
 
 export const recordStockReceiptSchema = z.object({
   branchId,
+  supplierName: optionalText,
+  supplierReference: optionalText,
+  deliveryReference: optionalText,
+  notes: optionalText,
+  items: z.array(stockReceiptItemSchema).min(1).max(100),
+  idempotencyKey,
+});
+
+export const recordAllocationStockReceiptSchema = z.object({
   supplierName: optionalText,
   supplierReference: optionalText,
   deliveryReference: optionalText,

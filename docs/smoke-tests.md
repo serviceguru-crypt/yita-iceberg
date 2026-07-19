@@ -8,25 +8,14 @@ npm run smoke:test -- --dry-run
 
 Dry run validates configuration and production guard behavior without authenticated writes.
 
-## Staging Authenticated Checks
+## Authenticated Checks
 
-Seed the minimal staging smoke data after staging deploy and before the full workflow test:
-
-```bash
-APP_ENV=staging \
-FIREBASE_PROJECT_ID=yita-iceberg-staging \
-STAGING_SEED_CONFIRM=true \
-STAGING_SEED_DRY_RUN=false \
-STAGING_SEED_PASSWORD="<temporary-staging-password>" \
-npm run seed:staging-smoke -- --apply
-```
-
-The seed script refuses production-looking project IDs and is dry-run by default. It creates deterministic `SMOKE TEST` branch, users, product, inventory, pricing, and customer records.
+Use a dedicated active admin smoke-test account. Do not generate disposable production orders or mutate live inventory from automated smoke checks.
 
 Set:
 
 ```text
-APP_ENV=staging
+APP_ENV=production
 APP_BASE_URL=
 FIREBASE_PROJECT_ID=
 NEXT_PUBLIC_FIREBASE_API_KEY=
@@ -55,8 +44,8 @@ SMOKE_TEST_ALLOW_PRODUCTION=true
 SMOKE_TEST_PRODUCTION_CONFIRMATION=RUN_SMOKE_TESTS_AGAINST_PRODUCTION
 ```
 
-Do not create destructive smoke data in production. Use staging for full order/payment/release/reversal workflow smoke tests.
+The automated smoke test is read-only: it checks routes and calls the dashboard summary. Perform order/payment/release/reversal validation with controlled records and explicit business approval.
 
 ## Cleanup
 
-Use `SMOKE_TEST_` prefixes for any manual staging test branches, customers, or products. Clean up staging data through controlled admin scripts or Firebase Console after export if needed.
+Use `SMOKE TEST` labels for any approved manual validation records. Reverse or archive them through normal audited workflows after verification.

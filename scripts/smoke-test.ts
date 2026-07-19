@@ -6,12 +6,12 @@ import { z } from "zod";
 import { assertProductionGuardFromEnv } from "./shared/confirm-production";
 
 const envSchema = z.object({
-  APP_ENV: z.enum(["local", "staging", "production"]).default("staging"),
+  APP_ENV: z.enum(["local", "staging", "production"]).default("local"),
   APP_BASE_URL: z.string().url().default("http://localhost:3000"),
-  FIREBASE_PROJECT_ID: z.string().min(1).default("yita-iceberg-dev"),
+  FIREBASE_PROJECT_ID: z.string().min(1).default("yita-iceberg"),
   NEXT_PUBLIC_FIREBASE_API_KEY: z.string().min(1).default("dry-run-api-key"),
   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: z.string().min(1).default("localhost"),
-  NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: z.string().min(1).default("yita-iceberg-dev.appspot.com"),
+  NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: z.string().min(1).default("yita-iceberg.firebasestorage.app"),
   NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: z.string().min(1).default("000000000000"),
   NEXT_PUBLIC_FIREBASE_APP_ID: z.string().min(1).default("1:000000000000:web:dryrun"),
   DEFAULT_FUNCTION_REGION: z.string().default("us-central1"),

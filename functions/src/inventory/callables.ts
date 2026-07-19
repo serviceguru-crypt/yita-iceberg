@@ -8,6 +8,7 @@ import {
   approveStockCountAction,
   archiveProductAction,
   createProductAction,
+  recordAllocationStockReceiptAction,
   recordStockReceiptAction,
   rejectInventoryAdjustmentAction,
   rejectStockCountAction,
@@ -35,6 +36,7 @@ export const archiveProduct = callable(archiveProductAction);
 export const addBranchProduct = callable(addBranchProductAction);
 export const updateBranchProductSettings = callable(updateBranchProductSettingsAction);
 export const updateBranchProductPricing = callable(updateBranchProductPricingAction);
+export const recordAllocationStockReceipt = callable(recordAllocationStockReceiptAction);
 export const recordStockReceipt = callable(recordStockReceiptAction);
 export const requestInventoryAdjustment = callable(requestInventoryAdjustmentAction);
 export const approveInventoryAdjustment = callable(approveInventoryAdjustmentAction);

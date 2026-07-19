@@ -9,24 +9,13 @@ import { appCheckEnforcementEnabled, callableOptions } from "../src/shared/runti
 import { assertProductionGuard } from "../../scripts/shared/confirm-production";
 
 function init() {
-  if (getApps().length === 0) initializeApp({ projectId: "yita-iceberg-dev" });
+  if (getApps().length === 0) initializeApp({ projectId: "yita-iceberg" });
 }
 
 async function clearFirestore() {
   const db = getFirestore();
-  await Promise.all(
-    ["inventory", "inventoryFinancials"].map(async (collectionId) => {
-      const snapshot = await db.collectionGroup(collectionId).get();
-      await Promise.all(snapshot.docs.map((doc) => doc.ref.delete()));
-    }),
-  );
   const collections = await db.listCollections();
-  await Promise.all(
-    collections.map(async (collection) => {
-      const snapshot = await collection.get();
-      await Promise.all(snapshot.docs.map((doc) => doc.ref.delete()));
-    }),
-  );
+  await Promise.all(collections.map((collection) => db.recursiveDelete(collection)));
 }
 
 beforeAll(() => init());

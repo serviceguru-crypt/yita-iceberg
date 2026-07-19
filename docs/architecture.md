@@ -133,7 +133,7 @@ Stock returns increase `onHandQty` and `returnedQty`. No-stock reversals never c
 
 ## Deployment Plan
 
-Phase 2 introduces Firebase configuration, emulator setup, environment validation, and project scripts. Later phases add CI, App Check, Cloud Scheduler for stale order expiry, staging and production aliases, Firebase App Hosting configuration, monitoring, backup documentation, and deployment controls.
+Phase 2 introduces Firebase configuration, emulator setup, environment validation, and project scripts. Later phases add CI, App Check, Cloud Scheduler for stale order expiry, Firebase App Hosting configuration, monitoring, backup documentation, and deployment controls for the `yita-iceberg` project.
 
 ## Testing Strategy
 
@@ -182,7 +182,7 @@ Current aggregation strategy is live bounded reads over indexed ledgers with har
 
 Phase 9 adds production separation and operations readiness:
 
-- Local, staging, and production environment examples.
+- Local emulator and production environment examples.
 - Firebase App Hosting runtime config for the Next.js app.
 - Cloud Functions runtime options, structured logging, and App Check-ready callable options.
 - Scheduled stale-order expiry and report-summary rebuild jobs.
