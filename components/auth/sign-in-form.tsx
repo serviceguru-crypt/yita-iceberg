@@ -50,7 +50,7 @@ export function SignInForm() {
         throw new Error("Session denied");
       }
 
-      router.replace("/profile");
+      router.replace("/dashboard");
       router.refresh();
     } catch {
       setError(genericSignInError);

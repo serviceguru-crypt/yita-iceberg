@@ -67,9 +67,7 @@ const navItems: NavItem[] = [
     shortLabel: "Reports",
     icon: IconReportAnalytics,
     roles: [
-      "order_registrar",
       "cashier",
-      "release_verifier",
       "branch_manager",
       "admin",
       "super_admin",

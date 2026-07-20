@@ -8,7 +8,7 @@ export default async function SignInPage() {
   const user = await getCurrentUser();
 
   if (user) {
-    redirect("/profile");
+    redirect("/dashboard");
   }
 
   return (

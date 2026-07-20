@@ -20,6 +20,11 @@ import {
 } from "@tabler/icons-react";
 
 import { useBranchContext } from "@/components/branch/branch-context";
+import {
+  DashboardGuide,
+  RoleWorkflowOverview,
+  roleGuides,
+} from "@/components/dashboard/dashboard-guide";
 import { Field } from "@/components/shared/field";
 import { OperationState } from "@/components/shared/operation-state";
 import { Button } from "@/components/ui/button";
@@ -221,6 +226,17 @@ export const reportConfigs: Record<Exclude<ReportType, "dashboard">, ReportConfi
   },
 };
 
+const reportRoles: Record<Exclude<ReportType, "dashboard">, PlatformRole[]> = {
+  sales: ["branch_manager", "admin", "super_admin"],
+  payments: ["cashier", "branch_manager", "admin", "super_admin"],
+  inventory: ["branch_manager", "admin", "super_admin"],
+  stock_movements: ["branch_manager", "admin", "super_admin"],
+  reversals: ["branch_manager", "admin", "super_admin"],
+  credit: ["branch_manager", "admin", "super_admin"],
+  staff_activity: ["cashier", "branch_manager", "admin", "super_admin"],
+  low_stock: ["branch_manager", "admin", "super_admin"],
+};
+
 const workflowCards: WorkflowCard[] = [
   {
     href: "/orders",
@@ -268,7 +284,7 @@ const workflowCards: WorkflowCard[] = [
     href: "/reports",
     title: "Reports and analytics",
     description: "Review sales, payments, inventory, stock movement, credit, and staff activity.",
-    roles: ["order_registrar", "cashier", "release_verifier", "branch_manager", "admin", "super_admin"],
+    roles: ["branch_manager", "admin", "super_admin"],
     icon: IconReportAnalytics,
   },
   {
@@ -426,16 +442,16 @@ export function ReportExportButton({
 }
 
 export function DashboardClient() {
-  const { selectedBranchId, user } = useBranchContext();
+  const { loading: branchLoading, selectedBranchId, user } = useBranchContext();
   const admin = isAdminRole(user.platformRole);
   const management = ["branch_manager", "admin", "super_admin"].includes(user.platformRole);
   const [branchScope, setBranchScope] = useState<BranchScope>(admin ? "all_branches" : "selected_branch");
   const [data, setData] = useState<ReportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const blocked = branchScope === "selected_branch" && !selectedBranchId;
+  const blocked = management && branchScope === "selected_branch" && !selectedBranchId;
 
   async function load() {
-    if (blocked) return;
+    if (!management || blocked) return;
     setError(null);
     try {
       const result = await callFunction<Record<string, unknown>, ReportResult>("getDashboardSummary", {
@@ -447,48 +463,57 @@ export function DashboardClient() {
     }
   }
 
-  useEffect(() => { void load(); }, [branchScope, selectedBranchId]);
+  useEffect(() => { void load(); }, [branchScope, management, selectedBranchId]);
 
-  const metrics = management
-    ? [
-        ["salesTodayKobo", "Sales today", true],
-        ["completedOrdersToday", "Completed orders", false],
-        ["pendingUnpaidOrders", "Pending unpaid", false],
-        ["paidButUnreleasedOrders", "Paid unreleased", false],
-        ["cashReceivedKobo", "Cash", true],
-        ["transferReceivedKobo", "Transfer", true],
-        ["posReceivedKobo", "POS", true],
-        ["creditSalesKobo", "Credit sales", true],
-        ["reversalRefundValueKobo", "Internal refunds", true],
-        ["lowStockCount", "Low stock", false],
-        ["inventoryValueKobo", "Inventory value", true],
-      ]
-    : [["ownActivityToday", "Own activity today", false]];
+  const metrics = [
+    ["salesTodayKobo", "Sales today", true],
+    ["completedOrdersToday", "Completed orders", false],
+    ["pendingUnpaidOrders", "Pending unpaid", false],
+    ["paidButUnreleasedOrders", "Paid unreleased", false],
+    ["cashReceivedKobo", "Cash", true],
+    ["transferReceivedKobo", "Transfer", true],
+    ["posReceivedKobo", "POS", true],
+    ["creditSalesKobo", "Credit sales", true],
+    ["reversalRefundValueKobo", "Internal refunds", true],
+    ["lowStockCount", "Low stock", false],
+    ["inventoryValueKobo", "Inventory value", true],
+  ];
+  const roleGuide = roleGuides[user.platformRole];
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-normal">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">Operational visibility for today.</p>
+          <p className="text-sm text-muted-foreground">
+            {management ? "Operational visibility for today." : roleGuide.summary}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button onClick={() => void load()} type="button" variant="outline"><IconRefresh />Refresh</Button>
-          <Button asChild><Link href="/reports"><IconChartBar />Reports</Link></Button>
+          <DashboardGuide role={user.platformRole} uid={user.uid} />
+          {management ? <Button onClick={() => void load()} type="button" variant="outline"><IconRefresh />Refresh</Button> : null}
+          {management ? <Button asChild><Link href="/reports"><IconChartBar />Reports</Link></Button> : null}
         </div>
       </div>
-      <div className="app-surface grid gap-3 rounded-xl border p-4 md:grid-cols-3">
-        <BranchScopeSelector branchScope={branchScope} setBranchScope={setBranchScope} />
-      </div>
-      {blocked ? <OperationState detail="Choose a branch or switch to all branches." title="Branch required" /> : null}
-      {error ? <ReportPermissionDenied detail={error} /> : null}
-      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-4">
-        {metrics.map(([key, label, money]) => (
-          <SummaryMetricCard key={String(key)} label={String(label)} money={Boolean(money)} value={data?.summary[String(key)]} />
-        ))}
-      </div>
+      <RoleWorkflowOverview role={user.platformRole} />
+      {management ? (
+        <>
+          <div className="app-surface grid gap-3 rounded-xl border p-4 md:grid-cols-3">
+            <BranchScopeSelector branchScope={branchScope} setBranchScope={setBranchScope} />
+          </div>
+          {blocked ? <OperationState detail="Choose a branch or switch to all branches." title="Branch required" /> : null}
+          {error ? <ReportPermissionDenied detail={error} /> : null}
+          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-4">
+            {metrics.map(([key, label, money]) => (
+              <SummaryMetricCard key={String(key)} label={String(label)} money={Boolean(money)} value={data?.summary[String(key)]} />
+            ))}
+          </div>
+        </>
+      ) : !branchLoading && !selectedBranchId ? (
+        <OperationState detail="Ask an administrator to assign your account to a branch before starting work." title="Branch assignment required" />
+      ) : null}
       <WorkflowLinks role={user.platformRole} />
-      {Array.isArray(data?.summary.branchComparison) && data.summary.branchComparison.length > 0 ? (
+      {management && Array.isArray(data?.summary.branchComparison) && data.summary.branchComparison.length > 0 ? (
         <BranchComparisonTable rows={data.summary.branchComparison as Record<string, unknown>[]} />
       ) : null}
     </div>
@@ -555,7 +580,10 @@ function WorkflowLinks({ role }: { role: PlatformRole }) {
 }
 
 export function ReportsIndexClient() {
-  const reports = Object.values(reportConfigs);
+  const { user } = useBranchContext();
+  const reports = Object.values(reportConfigs).filter((report) =>
+    reportRoles[report.type].includes(user.platformRole),
+  );
   return (
     <div className="space-y-5">
       <div>
@@ -577,6 +605,7 @@ export function ReportsIndexClient() {
 export function ReportPageClient({ reportType }: { reportType: Exclude<ReportType, "dashboard"> }) {
   const config = reportConfigs[reportType];
   const { selectedBranchId, user } = useBranchContext();
+  const allowed = reportRoles[reportType].includes(user.platformRole);
   const admin = isAdminRole(user.platformRole);
   const [branchScope, setBranchScope] = useState<BranchScope>(admin ? "all_branches" : "selected_branch");
   const [startDate, setStartDate] = useState(monthStart);
@@ -587,7 +616,7 @@ export function ReportPageClient({ reportType }: { reportType: Exclude<ReportTyp
   const blocked = branchScope === "selected_branch" && !selectedBranchId;
 
   async function load(pageCursor?: string | null) {
-    if (blocked) return;
+    if (!allowed || blocked) return;
     setLoading(true);
     setError(null);
     try {
@@ -603,12 +632,21 @@ export function ReportPageClient({ reportType }: { reportType: Exclude<ReportTyp
     }
   }
 
-  useEffect(() => { void load(); }, [branchScope, selectedBranchId, startDate, endDate, reportType]);
+  useEffect(() => { void load(); }, [allowed, branchScope, selectedBranchId, startDate, endDate, reportType]);
 
   const columns = useMemo(
     () => config.columns.filter((column) => !column.hideWhenNotSensitive || data?.sensitiveFieldsIncluded),
     [config.columns, data?.sensitiveFieldsIncluded],
   );
+
+  if (!allowed) {
+    return (
+      <OperationState
+        detail="This report is outside your assigned role. Use the dashboard to open your available work areas."
+        title="Report unavailable"
+      />
+    );
+  }
 
   return (
     <div className="space-y-5">
