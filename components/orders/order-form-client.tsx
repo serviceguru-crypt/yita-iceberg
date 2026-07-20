@@ -2,15 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  limit,
-  query,
-  where,
-} from "firebase/firestore";
 import { IconTrash } from "@tabler/icons-react";
 
 import { BranchRequired } from "@/components/branch/branch-required";
@@ -19,14 +10,12 @@ import { Field } from "@/components/shared/field";
 import { OperationState } from "@/components/shared/operation-state";
 import { Button } from "@/components/ui/button";
 import { callFunction } from "@/lib/firebase/callables";
-import { getFirebaseServices } from "@/lib/firebase/client";
 import { formatNairaFromKobo, formatQuantity } from "@/lib/format/number";
 import { createIdempotencyKey } from "@/lib/idempotency";
 import { storeOrderQrToken } from "@/lib/qr/volatile-token-store";
 import type {
   CustomerDocument,
   InventoryDocument,
-  OrderDocument,
   ProductDocument,
 } from "@/lib/types/operational";
 
@@ -44,21 +33,29 @@ type CreateOrderResult = {
   status: string;
 };
 
-function toProduct(id: string, data: Record<string, unknown>): ProductDocument {
-  return {
-    id,
-    sku: String(data.sku ?? ""),
-    name: String(data.name ?? id),
-    unit: String(data.unit ?? ""),
-    sellingPriceKobo: Number(data.sellingPriceKobo ?? 0),
-    minimumPriceKobo: Number(data.minimumPriceKobo ?? 0),
-    isActive: data.isActive === true,
-  };
-}
+type EditableOrder = {
+  id: string;
+  branchId: string;
+  status: string;
+  customerType: "walk_in" | "registered";
+  customerId: string | null;
+  customerSnapshot: { name: string | null; phone: string | null } | null;
+  items: Array<{
+    productId: string;
+    quantity: number;
+    discountPercent: number;
+    discountReason: string | null;
+  }>;
+};
 
-function toCustomer(id: string, data: Record<string, unknown>): CustomerDocument {
-  return { id, ...(data as Omit<CustomerDocument, "id">) };
-}
+type OrderFormDataResponse = {
+  ok?: boolean;
+  message?: string;
+  products?: ProductDocument[];
+  inventory?: InventoryDocument[];
+  customers?: CustomerDocument[];
+  order?: EditableOrder | null;
+};
 
 export function OrderFormClient({
   mode,
@@ -104,25 +101,33 @@ function OrderFormContent({
     setError(null);
 
     try {
-      const { db } = getFirebaseServices();
-      const [productsSnapshot, inventorySnapshot, customersSnapshot] =
-        await Promise.all([
-          getDocs(query(collection(db, `branches/${selectedBranchId}/products`), where("isActive", "==", true), limit(50))),
-          getDocs(query(collection(db, `branches/${selectedBranchId}/inventory`), limit(50))),
-          getDocs(query(collection(db, "customers"), where("branchId", "==", selectedBranchId), where("isActive", "==", true), limit(25))),
-        ]);
+      const searchParams = new URLSearchParams({ branchId: selectedBranchId });
+      if (mode === "edit" && orderId) searchParams.set("orderId", orderId);
+      const response = await fetch(`/api/orders/form-data?${searchParams}`, {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      const data = (await response.json()) as OrderFormDataResponse;
 
-      setProducts(productsSnapshot.docs.map((item) => toProduct(item.id, item.data())));
-      setInventory(Object.fromEntries(inventorySnapshot.docs.map((item) => [
-        item.id,
-        { id: item.id, ...(item.data() as Omit<InventoryDocument, "id">) },
-      ])));
-      setCustomers(customersSnapshot.docs.map((item) => toCustomer(item.id, item.data())));
+      if (
+        !response.ok ||
+        !data.ok ||
+        !Array.isArray(data.products) ||
+        !Array.isArray(data.inventory) ||
+        !Array.isArray(data.customers)
+      ) {
+        throw new Error(data.message || "Unable to load order form data.");
+      }
+
+      setProducts(data.products);
+      setInventory(
+        Object.fromEntries(data.inventory.map((item) => [item.id, item])),
+      );
+      setCustomers(data.customers);
 
       if (mode === "edit" && orderId) {
-        const orderSnapshot = await getDoc(doc(db, "orders", orderId));
-        if (!orderSnapshot.exists()) throw new Error("Order not found.");
-        const order = { id: orderSnapshot.id, ...(orderSnapshot.data() as Omit<OrderDocument, "id">) };
+        const order = data.order;
+        if (!order) throw new Error("Order not found.");
         if (!["awaiting_payment", "awaiting_discount_approval"].includes(order.status)) {
           throw new Error("Only unpaid orders awaiting payment or discount approval can be edited.");
         }
@@ -335,6 +340,11 @@ function OrderFormContent({
         <section className="space-y-3">
           <h2 className="text-sm font-semibold uppercase text-muted-foreground">Products</h2>
           <div className="grid gap-3 md:grid-cols-2">
+            {products.length === 0 ? (
+              <div className="rounded-lg border bg-card p-4 text-sm text-muted-foreground md:col-span-2">
+                No active products are assigned to {selectedBranch?.name}. Ask an administrator to allocate products to this branch.
+              </div>
+            ) : null}
             {products.map((product) => {
               const available =
                 (inventory[product.id]?.onHandQty ?? 0) -
