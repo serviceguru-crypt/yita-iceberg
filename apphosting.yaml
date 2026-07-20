@@ -7,23 +7,101 @@ runConfig:
 
 env:
   - variable: APP_ENV
+    value: production
     availability:
       - BUILD
       - RUNTIME
   - variable: APP_BASE_URL
+    value: https://yita-iceberg--yita-iceberg.us-east4.hosted.app
     availability:
       - BUILD
       - RUNTIME
   - variable: FIREBASE_PROJECT_ID
+    value: yita-iceberg
     availability:
       - BUILD
       - RUNTIME
   - variable: FIREBASE_STORAGE_BUCKET
+    value: yita-iceberg.firebasestorage.app
     availability:
       - BUILD
       - RUNTIME
   - variable: DEFAULT_FUNCTION_REGION
     value: us-central1
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: SESSION_COOKIE_NAME
+    value: __session
+    availability:
+      - RUNTIME
+  - variable: SESSION_COOKIE_MAX_AGE_DAYS
+    value: "5"
+    availability:
+      - RUNTIME
+  - variable: ENABLE_APP_CHECK_ENFORCEMENT
+    value: "false"
+    availability:
+      - RUNTIME
+  - variable: ENABLE_REPORT_SUMMARY_REBUILD
+    value: "true"
+    availability:
+      - RUNTIME
+  - variable: MAX_REPORT_EXPORT_DAYS
+    value: "31"
+    availability:
+      - RUNTIME
+  - variable: MAX_DETAIL_REPORT_DAYS
+    value: "93"
+    availability:
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: AIzaSyD4ZKF5iemf_DQ49PbbAGSiJ9PFVM_5elk
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: yita-iceberg.firebaseapp.com
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: yita-iceberg
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: yita-iceberg.firebasestorage.app
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    value: "464641042034"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: 1:464641042034:web:7f5b1e37482078465244eb
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_APP_CHECK_SITE_KEY
+    value: 6Lfr1r1wtAAAAAJNK5wSaZr2ZAKYIJ0cJo6gKcGDL
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_DEFAULT_FUNCTION_REGION
+    value: us-central1
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_USE_FIREBASE_EMULATORS
+    value: "false"
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_ENABLE_APP_CHECK
+    value: "true"
     availability:
       - BUILD
       - RUNTIME
