@@ -7,11 +7,16 @@ import {
   type RulesTestEnvironment,
 } from "@firebase/rules-unit-testing";
 import {
+  collection,
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
+  limit,
+  query,
   serverTimestamp,
   setDoc,
+  where,
 } from "firebase/firestore";
 import { getBytes, ref, uploadString } from "firebase/storage";
 
@@ -378,6 +383,33 @@ describe("Firestore branch access rules", () => {
     await assertSucceeds(getDoc(doc(db, "branches/branch-a/inventory/product-1")));
     await assertSucceeds(getDoc(doc(db, "branches/branch-a/products/product-1")));
     await assertSucceeds(getDoc(doc(db, "stockMovements/movement-a")));
+  });
+
+  it("allows an order registrar to load assigned-branch order form data", async () => {
+    const db = testEnv.authenticatedContext("registrar-a").firestore();
+
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(db, "branches/branch-a/products"),
+          where("isActive", "==", true),
+          limit(50),
+        ),
+      ),
+    );
+    await assertSucceeds(
+      getDocs(query(collection(db, "branches/branch-a/inventory"), limit(50))),
+    );
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(db, "customers"),
+          where("branchId", "==", "branch-a"),
+          where("isActive", "==", true),
+          limit(25),
+        ),
+      ),
+    );
   });
 
   it("blocks cross-branch inventory reads", async () => {
