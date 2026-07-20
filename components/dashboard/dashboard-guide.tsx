@@ -271,7 +271,7 @@ export function RoleWorkflowOverview({ role }: { role: PlatformRole }) {
               <div>
                 <p className="text-xs font-semibold text-muted-foreground">{index + 1} OF 3</p>
                 <p className="mt-0.5 font-medium">{step.title}</p>
-                <p className="mt-1 text-sm leading-5 text-muted-foreground">{step.description}</p>
+                <p className="mt-1 hidden text-sm leading-5 text-muted-foreground sm:block">{step.description}</p>
               </div>
             </li>
           );

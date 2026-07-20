@@ -126,7 +126,7 @@ const navItems: NavItem[] = [
     label: "Inventory",
     shortLabel: "Stock",
     icon: IconPackage,
-    roles: ["order_registrar", "cashier", "release_verifier", "branch_manager", "admin", "super_admin"],
+    roles: ["branch_manager", "admin", "super_admin"],
     enabled: true,
   },
   {
@@ -134,7 +134,7 @@ const navItems: NavItem[] = [
     label: "Reversals",
     shortLabel: "Reverse",
     icon: IconReceiptRefund,
-    roles: ["order_registrar", "cashier", "release_verifier", "branch_manager", "admin", "super_admin"],
+    roles: ["branch_manager", "admin", "super_admin"],
     enabled: true,
   },
   {
