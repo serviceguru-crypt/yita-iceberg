@@ -2,16 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  limit,
-  orderBy,
-  query,
-  where,
-} from "firebase/firestore";
 import { ref, uploadBytesResumable } from "firebase/storage";
 
 import { BranchRequired } from "@/components/branch/branch-required";
@@ -39,6 +29,14 @@ type PaymentLine = {
   uploadProgress?: number;
 };
 
+type CashierOrdersResponse = {
+  ok?: boolean;
+  message?: string;
+  orders?: OrderDocument[];
+  order?: OrderDocument;
+  payments?: PaymentDocument[];
+};
+
 function newLine(): PaymentLine {
   return {
     id: createIdempotencyKey("line"),
@@ -61,22 +59,28 @@ function CashierQueue() {
   const [orders, setOrders] = useState<OrderDocument[]>([]);
   const [lookup, setLookup] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   async function loadQueue() {
     if (!selectedBranchId) return;
+    setLoading(true);
+    setError(null);
     try {
-      const snapshot = await getDocs(
-        query(
-          collection(getFirebaseServices().db, "orders"),
-          where("branchId", "==", selectedBranchId),
-          where("status", "==", "awaiting_payment"),
-          orderBy("createdAt", "desc"),
-          limit(25),
-        ),
+      const response = await fetch(
+        `/api/cashier/orders?branchId=${encodeURIComponent(selectedBranchId)}`,
+        { cache: "no-store", credentials: "same-origin" },
       );
-      setOrders(snapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<OrderDocument, "id">) })));
-    } catch {
-      setError("Unable to load payment queue.");
+      const result = (await response.json()) as CashierOrdersResponse;
+
+      if (!response.ok || !result.ok || !Array.isArray(result.orders)) {
+        throw new Error(result.message || "Unable to load payment queue.");
+      }
+
+      setOrders(result.orders);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load payment queue.");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -100,6 +104,7 @@ function CashierQueue() {
         <input className="h-9 rounded-md border bg-background px-3" onChange={(event) => setLookup(event.target.value)} placeholder="YI-..." value={lookup} />
       </Field>
       {error ? <OperationState detail={error} title="Queue unavailable" /> : null}
+      {loading ? <OperationState title="Loading payment queue" /> : null}
       <div className="grid gap-3">
         {filtered.map((order) => (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4" key={order.id}>
@@ -113,6 +118,13 @@ function CashierQueue() {
             </div>
           </div>
         ))}
+        {!loading && !error && filtered.length === 0 ? (
+          <div className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">
+            {lookup.trim()
+              ? "No awaiting-payment order matches that order number."
+              : "No orders are currently awaiting payment at this branch."}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -136,11 +148,24 @@ function PaymentContent({ orderId }: { orderId: string }) {
   const requireProof = selectedBranch?.settings?.requireTransferProof === true;
 
   async function loadOrder() {
+    if (!selectedBranchId) return;
+    setError(null);
     try {
-      const snapshot = await getDoc(doc(getFirebaseServices().db, "orders", orderId));
-      if (!snapshot.exists()) throw new Error("Order not found.");
-      const nextOrder = { id: snapshot.id, ...(snapshot.data() as Omit<OrderDocument, "id">) };
-      if (nextOrder.branchId !== selectedBranchId) throw new Error("This order is not in the active branch.");
+      const searchParams = new URLSearchParams({
+        branchId: selectedBranchId,
+        orderId,
+      });
+      const response = await fetch(`/api/cashier/orders?${searchParams}`, {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      const result = (await response.json()) as CashierOrdersResponse;
+
+      if (!response.ok || !result.ok || !result.order) {
+        throw new Error(result.message || "Unable to load order.");
+      }
+
+      const nextOrder = result.order;
       if (nextOrder.status !== "awaiting_payment") throw new Error("This order is not ready for payment.");
       setOrder(nextOrder);
     } catch (err) {
@@ -343,21 +368,37 @@ function PaymentReceipt({ orderId }: { orderId: string }) {
   const { selectedBranch, selectedBranchId } = useBranchContext();
   const [order, setOrder] = useState<OrderDocument | null>(null);
   const [payments, setPayments] = useState<PaymentDocument[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
-      const { db } = getFirebaseServices();
-      const orderSnapshot = await getDoc(doc(db, "orders", orderId));
-      if (orderSnapshot.exists()) {
-        const nextOrder = { id: orderSnapshot.id, ...(orderSnapshot.data() as Omit<OrderDocument, "id">) };
-        if (nextOrder.branchId === selectedBranchId) setOrder(nextOrder);
+      if (!selectedBranchId) return;
+      setError(null);
+      try {
+        const searchParams = new URLSearchParams({
+          branchId: selectedBranchId,
+          orderId,
+        });
+        const response = await fetch(`/api/cashier/orders?${searchParams}`, {
+          cache: "no-store",
+          credentials: "same-origin",
+        });
+        const result = (await response.json()) as CashierOrdersResponse;
+
+        if (!response.ok || !result.ok || !result.order || !Array.isArray(result.payments)) {
+          throw new Error(result.message || "Unable to load payment receipt.");
+        }
+
+        setOrder(result.order);
+        setPayments(result.payments);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to load payment receipt.");
       }
-      const paymentSnapshot = await getDocs(collection(db, `orders/${orderId}/payments`));
-      setPayments(paymentSnapshot.docs.map((item) => ({ id: item.id, ...(item.data() as Omit<PaymentDocument, "id">) })));
     }
     void load();
   }, [orderId, selectedBranchId]);
 
+  if (error) return <OperationState detail={error} title="Receipt unavailable" />;
   if (!order) return <OperationState title="Loading receipt" />;
 
   const total = payments.reduce((sum, payment) => sum + payment.amountKobo, 0);
