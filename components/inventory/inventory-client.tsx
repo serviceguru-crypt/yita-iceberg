@@ -218,10 +218,15 @@ function InventoryList() {
           title={items.length > 0 ? "No matching inventory items" : "No inventory items yet"}
         />
       ) : null}
-      {manager && items.length === 0 ? (
+      {admin && items.length === 0 ? (
         <Button asChild variant="outline">
           <Link href="/catalog/branch-products">Add products to branch</Link>
         </Button>
+      ) : null}
+      {manager && !admin && items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Ask an administrator to allocate catalog products to this branch.
+        </p>
       ) : null}
       {!admin ? <p className="text-xs text-muted-foreground">Cost and valuation data are hidden for this role.</p> : null}
     </div>
@@ -549,11 +554,11 @@ function AdjustmentDetail({ requestId }: { requestId: string }) {
     await load();
   }
   if (!row) return <OperationState title="Loading adjustment" />;
-  const admin = isAdminRole(user.platformRole);
+  const canApprove = canManageInventory(user.platformRole);
   return <FormShell title="Stock correction" backHref="/inventory/adjustments">
     {message ? <OperationState detail={message} title="Updated" /> : null}
     <div className="rounded-lg border bg-card p-4 text-sm"><p className="font-medium">{row.adjustmentType.replaceAll("_", " ")} · {row.quantity}</p><p className="text-muted-foreground">{row.reason}</p><p className="mt-2">Status: {row.status}</p></div>
-    {admin && row.status === "pending" ? <div className="flex gap-2"><Button onClick={() => void decide("approveInventoryAdjustment")} type="button">Approve</Button><Button onClick={() => void decide("rejectInventoryAdjustment")} type="button" variant="destructive">Reject</Button></div> : null}
+    {canApprove && row.status === "pending" ? <div className="flex gap-2"><Button onClick={() => void decide("approveInventoryAdjustment")} type="button">Approve</Button><Button onClick={() => void decide("rejectInventoryAdjustment")} type="button" variant="destructive">Reject</Button></div> : null}
   </FormShell>;
 }
 
@@ -630,13 +635,13 @@ function StockCountDetail({ stockCountId }: { stockCountId: string }) {
     await load();
   }
   if (!count) return <OperationState title="Loading stock count" />;
-  const admin = isAdminRole(user.platformRole);
+  const canApprove = canManageInventory(user.platformRole);
   return <FormShell title={count.stockCountNumber} backHref="/inventory/counts">
     {message ? <OperationState detail={message} title="Updated" /> : null}
     <p className="text-sm text-muted-foreground">Status: {count.status}. Inventory changes only after approval.</p>
     <div className="space-y-2">{items.map((item) => <div className="grid gap-2 rounded-lg border bg-card p-3 md:grid-cols-[1fr_160px_160px]" key={item.id}><span>{item.productId}</span><span>Expected {item.expectedOnHandQtyAtStart}</span><input className="h-9 rounded-md border bg-background px-3" disabled={count.status !== "open"} onChange={(e) => setInputs(inputs.map((input) => input.productId === item.productId ? { ...input, countedQty: e.target.value } : input))} placeholder="Counted" value={inputs.find((input) => input.productId === item.productId)?.countedQty ?? ""} /></div>)}</div>
     {count.status === "open" ? <Button onClick={() => void submit().catch((err) => setMessage(err instanceof Error ? err.message : "Submit failed"))} type="button">Submit count</Button> : null}
-    {admin && count.status === "submitted" ? <div className="flex gap-2"><Button onClick={() => void decide("approveStockCount").catch((err) => setMessage(err instanceof Error ? err.message : "Approval failed"))} type="button">Approve</Button><Button onClick={() => void decide("rejectStockCount")} type="button" variant="destructive">Reject</Button></div> : null}
+    {canApprove && count.status === "submitted" ? <div className="flex gap-2"><Button onClick={() => void decide("approveStockCount").catch((err) => setMessage(err instanceof Error ? err.message : "Approval failed"))} type="button">Approve</Button><Button onClick={() => void decide("rejectStockCount")} type="button" variant="destructive">Reject</Button></div> : null}
   </FormShell>;
 }
 
