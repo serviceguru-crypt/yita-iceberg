@@ -36,6 +36,7 @@ export function maxDetailReportDays() {
 export function callableOptions(overrides: Partial<CallableOptions> = {}): CallableOptions {
   return {
     enforceAppCheck: appCheckEnforcementEnabled(),
+    invoker: "public",
     memory: "512MiB",
     timeoutSeconds: 60,
     ...overrides,
