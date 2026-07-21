@@ -26,10 +26,9 @@ git diff --check
 
 ## Required Secrets
 
-- `GCP_WORKLOAD_IDENTITY_PROVIDER`
-- `GCP_DEPLOY_SERVICE_ACCOUNT`
-- `NEXT_PUBLIC_FIREBASE_API_KEY`
+- `NEXT_PUBLIC_FIREBASE_APP_CHECK_SITE_KEY`
+- `SMOKE_TEST_EMAIL` and `SMOKE_TEST_PASSWORD` when live smoke checks are enabled
 
-Use GitHub environment variables for non-secret project config such as `APP_BASE_URL` and Firebase public IDs.
+The workflow keeps public Firebase web identifiers and the Workload Identity resource names in version control. Authentication still uses GitHub OIDC and does not store a Google service-account key.
 
 Do not commit service account JSON.

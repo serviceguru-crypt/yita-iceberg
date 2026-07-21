@@ -64,8 +64,9 @@ jobs:
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          project_id: yita-iceberg
+          workload_identity_provider: projects/464641042034/locations/global/workloadIdentityPools/github-actions/providers/yita-github
+          service_account: yita-github-deployer@yita-iceberg.iam.gserviceaccount.com
       - name: Deploy rules and indexes
         run: |
           npx firebase-tools deploy --only firestore:rules,storage --project yita
