@@ -669,3 +669,47 @@ describe("Storage payment proof rules", () => {
     await assertFails(getBytes(ref(adminStorage, "report-exports/branch-a/export-a.csv")));
   });
 });
+
+describe("Storage product image rules", () => {
+  it("allows admins to upload product images and active staff to view them", async () => {
+    const adminStorage = testEnv.authenticatedContext("admin-user").storage();
+    const productRef = ref(adminStorage, "product-images/product-1/primary");
+    await assertSucceeds(uploadString(productRef, "image", "raw", {
+      contentType: "image/webp",
+      customMetadata: { productId: "product-1", uploadedBy: "admin-user" },
+    }));
+
+    const registrarStorage = testEnv.authenticatedContext("registrar-a").storage();
+    await assertSucceeds(getBytes(ref(registrarStorage, "product-images/product-1/primary")));
+  });
+
+  it("rejects non-admin, invalid, and mismatched product image uploads", async () => {
+    const registrarStorage = testEnv.authenticatedContext("registrar-a").storage();
+    await assertFails(uploadString(
+      ref(registrarStorage, "product-images/product-1/primary"),
+      "image",
+      "raw",
+      { contentType: "image/png", customMetadata: { productId: "product-1", uploadedBy: "registrar-a" } },
+    ));
+
+    const adminStorage = testEnv.authenticatedContext("admin-user").storage();
+    await assertFails(uploadString(
+      ref(adminStorage, "product-images/product-1/not-primary"),
+      "image",
+      "raw",
+      { contentType: "image/png", customMetadata: { productId: "product-1", uploadedBy: "admin-user" } },
+    ));
+    await assertFails(uploadString(
+      ref(adminStorage, "product-images/product-1/primary"),
+      "not an image",
+      "raw",
+      { contentType: "text/plain", customMetadata: { productId: "product-1", uploadedBy: "admin-user" } },
+    ));
+    await assertFails(uploadString(
+      ref(adminStorage, "product-images/product-1/primary"),
+      "image",
+      "raw",
+      { contentType: "image/png", customMetadata: { productId: "another-product", uploadedBy: "admin-user" } },
+    ));
+  });
+});

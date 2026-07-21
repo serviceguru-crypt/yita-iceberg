@@ -22,6 +22,7 @@ export {
   updateProduct,
 } from "./inventory/callables";
 export {
+  administerSale,
   approveDiscount,
   cancelOrder,
   confirmPayment,

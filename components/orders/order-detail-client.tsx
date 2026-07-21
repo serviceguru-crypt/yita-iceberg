@@ -29,7 +29,10 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
   const [order, setOrder] = useState<OrderDocument | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const userName = useUserDisplayNames([order?.createdBy], selectedBranchId);
+  const userName = useUserDisplayNames(
+    [order?.createdBy, order?.administeredBy],
+    selectedBranchId,
+  );
 
   async function loadOrder() {
     setLoading(true);
@@ -106,6 +109,16 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
           <p className="mt-2 text-xl font-semibold">{formatNairaFromKobo(order.grandTotalKobo)}</p>
         </div>
       </div>
+
+      {order.administeredSale ? (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+          <p className="font-semibold">Administrator direct sale</p>
+          <p className="mt-1">{order.administrationReason}</p>
+          <p className="mt-1 text-xs">
+            Completed by {userName(order.administeredBy)} at {timestampLabel(order.administeredAt)} without cashier and release-verifier handoffs.
+          </p>
+        </div>
+      ) : null}
 
       <OrderItemTable items={order.items} />
       <div className="ml-auto grid max-w-sm gap-2 rounded-lg border bg-card p-4 text-sm">

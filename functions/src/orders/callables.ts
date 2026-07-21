@@ -3,6 +3,7 @@ import { onCall } from "firebase-functions/v2/https";
 import { toHttpsError } from "../shared/errors";
 import { callableOptions, sensitiveCallableOptions } from "../shared/runtime";
 import {
+  administerSaleAction,
   approveDiscountAction,
   cancelOrderAction,
   confirmPaymentAction,
@@ -14,6 +15,14 @@ import {
   validateReleaseQrAction,
   verifyAndCompleteReleaseAction,
 } from "./service";
+
+export const administerSale = onCall(sensitiveCallableOptions(), async (request) => {
+  try {
+    return await administerSaleAction(request.auth?.uid, request.data);
+  } catch (error) {
+    throw toHttpsError(error);
+  }
+});
 
 export const createOrder = onCall(sensitiveCallableOptions(), async (request) => {
   try {

@@ -2,15 +2,17 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { IconTrash } from "@tabler/icons-react";
+import { IconPlus, IconTrash } from "@tabler/icons-react";
 
 import { BranchRequired } from "@/components/branch/branch-required";
 import { useBranchContext } from "@/components/branch/branch-context";
+import { ProductImage } from "@/components/catalog/product-image";
 import { Field } from "@/components/shared/field";
 import { OperationState } from "@/components/shared/operation-state";
 import { Button } from "@/components/ui/button";
+import { isAdminRole } from "@/lib/domain/roles";
 import { callFunction } from "@/lib/firebase/callables";
-import { formatNairaFromKobo, formatQuantity } from "@/lib/format/number";
+import { formatNairaFromKobo, formatQuantity, parseNairaToKobo } from "@/lib/format/number";
 import { createIdempotencyKey } from "@/lib/idempotency";
 import { storeOrderQrToken } from "@/lib/qr/volatile-token-store";
 import type {
@@ -29,8 +31,15 @@ type CartLine = {
 type CreateOrderResult = {
   orderId: string;
   orderNumber: string;
-  qrToken: string;
+  qrToken?: string;
   status: string;
+};
+
+type DirectPaymentLine = {
+  id: string;
+  paymentMethod: "cash" | "bank_transfer" | "pos_terminal" | "credit";
+  amount: string;
+  reference: string;
 };
 
 type EditableOrder = {
@@ -61,7 +70,7 @@ export function OrderFormClient({
   mode,
   orderId,
 }: {
-  mode: "create" | "edit";
+  mode: "create" | "edit" | "direct";
   orderId?: string;
 }) {
   return (
@@ -75,10 +84,10 @@ function OrderFormContent({
   mode,
   orderId,
 }: {
-  mode: "create" | "edit";
+  mode: "create" | "edit" | "direct";
   orderId?: string;
 }) {
-  const { selectedBranch, selectedBranchId } = useBranchContext();
+  const { selectedBranch, selectedBranchId, user } = useBranchContext();
   const [products, setProducts] = useState<ProductDocument[]>([]);
   const [inventory, setInventory] = useState<Record<string, InventoryDocument>>({});
   const [customers, setCustomers] = useState<CustomerDocument[]>([]);
@@ -93,7 +102,12 @@ function OrderFormContent({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CreateOrderResult | null>(null);
+  const [administrationReason, setAdministrationReason] = useState("");
+  const [paymentLines, setPaymentLines] = useState<DirectPaymentLine[]>([
+    { id: "payment-1", paymentMethod: "cash", amount: "", reference: "" },
+  ]);
   const requireDiscountReason = selectedBranch?.settings?.requireDiscountReason === true;
+  const directMode = mode === "direct";
 
   async function loadData() {
     if (!selectedBranchId) return;
@@ -195,6 +209,24 @@ function OrderFormContent({
     ]);
   }
 
+  function setPaymentLine(id: string, patch: Partial<DirectPaymentLine>) {
+    setPaymentLines((current) =>
+      current.map((line) => (line.id === id ? { ...line, ...patch } : line)),
+    );
+  }
+
+  function addPaymentLine() {
+    setPaymentLines((current) => [
+      ...current,
+      {
+        id: `payment-${crypto.randomUUID()}`,
+        paymentMethod: "cash",
+        amount: "",
+        reference: "",
+      },
+    ]);
+  }
+
   async function quickCreateCustomer() {
     if (!selectedBranchId || !newCustomerName.trim() || !newCustomerPhone.trim()) return;
     setSubmitting(true);
@@ -247,6 +279,42 @@ function OrderFormContent({
           qrToken: "",
           status: "updated",
         });
+      } else if (directMode) {
+        const directPayments = paymentLines.map((line) => ({
+          paymentMethod: line.paymentMethod,
+          amountKobo: parseNairaToKobo(line.amount),
+          ...(line.reference.trim() ? { reference: line.reference.trim() } : {}),
+        }));
+        const paymentTotal = directPayments.reduce(
+          (sum, line) => sum + line.amountKobo,
+          0,
+        );
+        if (administrationReason.trim().length < 5) {
+          throw new Error("Enter a reason for administering this sale directly.");
+        }
+        if (paymentTotal !== informativeTotal) {
+          throw new Error("Payment lines must equal the sale total.");
+        }
+        const created = await callFunction<Record<string, unknown>, CreateOrderResult>(
+          "administerSale",
+          {
+            branchId: selectedBranchId,
+            customerType,
+            ...(customerType === "registered"
+              ? { customerId }
+              : {
+                  customerSnapshot: {
+                    ...(walkInName.trim() ? { name: walkInName.trim() } : {}),
+                    ...(walkInPhone.trim() ? { phone: walkInPhone.trim() } : {}),
+                  },
+                }),
+            items,
+            paymentLines: directPayments,
+            administrationReason: administrationReason.trim(),
+            idempotencyKey: createIdempotencyKey("administer-sale"),
+          },
+        );
+        setResult(created);
       } else {
         const created = await callFunction<
           Record<string, unknown>,
@@ -267,7 +335,7 @@ function OrderFormContent({
         });
         storeOrderQrToken(created.orderId, {
           orderNumber: created.orderNumber,
-          qrToken: created.qrToken,
+          qrToken: created.qrToken ?? "",
         });
         setResult(created);
       }
@@ -298,6 +366,9 @@ function OrderFormContent({
   }
 
   if (loading) return <OperationState title="Loading order form" />;
+  if (directMode && !isAdminRole(user.platformRole)) {
+    return <OperationState detail="Only admin and super-admin users can administer a sale directly." title="Restricted" />;
+  }
   if (error && products.length === 0) {
     return <OperationState actionLabel="Retry" detail={error} onAction={() => void loadData()} title="Order form unavailable" />;
   }
@@ -307,7 +378,11 @@ function OrderFormContent({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-normal">
-            {mode === "edit" ? "Edit unpaid order" : "Create order"}
+            {mode === "edit"
+              ? "Edit unpaid order"
+              : directMode
+                ? "Administer sale"
+                : "Create order"}
           </h1>
           <p className="text-sm text-muted-foreground">
             {selectedBranch?.name}. Prices shown here are informative; server totals are final.
@@ -352,9 +427,12 @@ function OrderFormContent({
               return (
                 <div className="rounded-lg border bg-card p-4" key={product.id}>
                   <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-medium">{product.name}</p>
-                      <p className="text-xs text-muted-foreground">{product.sku} · {product.unit}</p>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <ProductImage alt={product.name} className="size-14" path={product.imageStoragePath} version={product.imageUpdatedAt} />
+                      <div className="min-w-0">
+                        <p className="font-medium">{product.name}</p>
+                        <p className="text-xs text-muted-foreground">{product.sku} · {product.unit}</p>
+                      </div>
                     </div>
                     <p className="text-sm font-medium">{formatNairaFromKobo(product.sellingPriceKobo)}</p>
                   </div>
@@ -372,7 +450,7 @@ function OrderFormContent({
 
         <aside className="space-y-4 rounded-lg border bg-card p-4">
           <h2 className="text-sm font-semibold uppercase text-muted-foreground">Customer</h2>
-          {mode === "create" ? (
+          {mode !== "edit" ? (
             <div className="grid gap-3">
               <Field label="Customer type">
                 <select className="h-9 rounded-md border bg-background px-3" onChange={(event) => setCustomerType(event.target.value as "walk_in" | "registered")} value={customerType}>
@@ -422,10 +500,10 @@ function OrderFormContent({
                 <div className="rounded-lg border p-3" key={line.productId}>
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <p className="font-medium">{product.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Locked price {formatNairaFromKobo(product.sellingPriceKobo)}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <ProductImage alt={product.name} className="size-10" path={product.imageStoragePath} version={product.imageUpdatedAt} />
+                        <div><p className="font-medium">{product.name}</p><p className="text-xs text-muted-foreground">Locked price {formatNairaFromKobo(product.sellingPriceKobo)}</p></div>
+                      </div>
                     </div>
                     <Button onClick={() => setCart((current) => current.filter((item) => item.productId !== line.productId))} size="icon-sm" type="button" variant="ghost">
                       <IconTrash />
@@ -458,9 +536,50 @@ function OrderFormContent({
               <span className="font-semibold">{formatNairaFromKobo(informativeTotal)}</span>
             </div>
           </div>
+          {directMode ? (
+            <div className="space-y-3 border-t pt-4">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-sm font-semibold uppercase text-muted-foreground">Payment</h2>
+                <Button onClick={addPaymentLine} size="sm" type="button" variant="outline">
+                  <IconPlus /> Split payment
+                </Button>
+              </div>
+              {paymentLines.map((line, index) => (
+                <div className="grid gap-2 rounded-lg border p-3" key={line.id}>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Field label="Method">
+                      <select className="h-9 rounded-md border bg-background px-3" onChange={(event) => setPaymentLine(line.id, { paymentMethod: event.target.value as DirectPaymentLine["paymentMethod"] })} value={line.paymentMethod}>
+                        <option value="cash">Cash</option>
+                        <option value="bank_transfer">Bank transfer</option>
+                        <option value="pos_terminal">POS terminal</option>
+                        <option value="credit">Credit</option>
+                      </select>
+                    </Field>
+                    <Field label="Amount">
+                      <input className="h-9 rounded-md border bg-background px-3" inputMode="decimal" onChange={(event) => setPaymentLine(line.id, { amount: event.target.value })} placeholder={index === 0 ? String(informativeTotal / 100) : "0.00"} value={line.amount} />
+                    </Field>
+                  </div>
+                  {line.paymentMethod === "bank_transfer" || line.paymentMethod === "pos_terminal" ? (
+                    <Field label="Reference">
+                      <input className="h-9 rounded-md border bg-background px-3" onChange={(event) => setPaymentLine(line.id, { reference: event.target.value })} value={line.reference} />
+                    </Field>
+                  ) : null}
+                  {paymentLines.length > 1 ? (
+                    <Button aria-label="Remove payment line" onClick={() => setPaymentLines((current) => current.filter((item) => item.id !== line.id))} size="sm" type="button" variant="ghost">
+                      <IconTrash /> Remove line
+                    </Button>
+                  ) : null}
+                </div>
+              ))}
+              <Field label="Reason for direct administration">
+                <textarea className="min-h-20 rounded-md border bg-background px-3 py-2" onChange={(event) => setAdministrationReason(event.target.value)} placeholder="Record why the normal cashier and release handoffs are being skipped" value={administrationReason} />
+              </Field>
+              <p className="text-xs text-muted-foreground">This action immediately records payment, completes release, reduces stock, and writes an audit entry.</p>
+            </div>
+          ) : null}
           <div className="flex flex-wrap gap-2">
             <Button disabled={submitting || cart.length === 0 || (customerType === "registered" && !customerId)} onClick={() => void submitOrder()} type="button">
-              {submitting ? "Saving..." : mode === "edit" ? "Update order" : "Create order"}
+              {submitting ? "Saving..." : mode === "edit" ? "Update order" : directMode ? "Complete direct sale" : "Create order"}
             </Button>
             {mode === "edit" ? (
               <Button disabled={submitting} onClick={() => void cancelOrder()} type="button" variant="destructive">

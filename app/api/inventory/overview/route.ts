@@ -37,6 +37,9 @@ function toInventory(id: string, data: Record<string, unknown>): InventoryDocume
     reorderLevel: numberValue(data.reorderLevel),
     isLowStock: data.isLowStock === true,
     isActive: data.isActive === false ? false : true,
+    imageStoragePath:
+      typeof data.imageStoragePath === "string" ? data.imageStoragePath : null,
+    imageUpdatedAt: data.imageUpdatedAt ?? null,
     updatedAt: dateValue(data.updatedAt),
     updatedBy: typeof data.updatedBy === "string" ? data.updatedBy : undefined,
   };
@@ -73,8 +76,22 @@ export async function GET(request: Request) {
       .collection(`branches/${branchId}/inventory`)
       .limit(500)
       .get();
+    const productSnapshots = snapshot.empty
+      ? []
+      : await adminDb().getAll(
+          ...snapshot.docs.map((item) =>
+            adminDb().doc(`products/${String(item.data().productId ?? item.id)}`),
+          ),
+        );
+    const products = new Map(
+      productSnapshots.map((item) => [item.id, item.data() ?? {}]),
+    );
     const items = snapshot.docs
-      .map((item) => toInventory(item.id, item.data()))
+      .map((item) => {
+        const data = item.data();
+        const productId = String(data.productId ?? item.id);
+        return toInventory(item.id, { ...data, ...(products.get(productId) ?? {}) });
+      })
       .sort((first, second) =>
         String(first.productName ?? "").localeCompare(
           String(second.productName ?? ""),

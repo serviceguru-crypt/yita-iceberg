@@ -6,6 +6,7 @@ import { adminDb, adminStorageBucket } from "../shared/firebase";
 import { createOpaqueToken, hashValue } from "../shared/hash";
 import { canAccessBranch, type ActorProfile } from "../shared/roles";
 import {
+  administerSaleSchema,
   approveDiscountSchema,
   cancelOrderSchema,
   confirmPaymentSchema,
@@ -43,6 +44,10 @@ const defaultBranchSettings: BranchSettings = {
 };
 
 function ensureRole(actor: ActorProfile, roles: string[]) {
+  if (["admin", "super_admin"].includes(actor.platformRole)) {
+    return;
+  }
+
   if (!roles.includes(actor.platformRole)) {
     throw new HttpsError("permission-denied", "Role is not allowed.");
   }
@@ -773,6 +778,311 @@ export async function createOrderAction(actorUid: string | undefined, input: unk
       createdAt: now,
     });
 
+    return response;
+  });
+}
+
+export async function administerSaleAction(actorUid: string | undefined, input: unknown) {
+  const actor = await requireActor(actorUid);
+  ensureRole(actor, []);
+  const data = administerSaleSchema.parse(input);
+  ensureBranch(actor, data.branchId);
+
+  const { keyHash, ref } = idemRef(actor, "administerSale", data.idempotencyKey);
+  const orderRef = adminDb().collection("orders").doc();
+  const orderNumber = generateOrderNumber();
+  const qrToken = createOpaqueToken();
+
+  return adminDb().runTransaction(async (tx) => {
+    const existing = await tx.get(ref);
+    if (existing.exists) return existing.data()?.responseSnapshot;
+
+    const branchSnapshot = await tx.get(adminDb().doc(`branches/${data.branchId}`));
+    if (!branchSnapshot.exists || branchSnapshot.data()?.isActive !== true) {
+      throw new HttpsError("invalid-argument", "Invalid branch.");
+    }
+
+    const settings = getSettings(branchSnapshot.data());
+    validateDiscountReasons(data.items, settings);
+    const customer = await readCustomerSnapshot(tx, data.branchId, data);
+    const calculated = await buildOrderItems(tx, data.branchId, actor, data.items);
+
+    if (data.paymentLines.length > 1 && !settings.allowSplitPayments) {
+      throw new HttpsError("failed-precondition", "Split payments are disabled.");
+    }
+
+    const paymentTotalKobo = data.paymentLines.reduce(
+      (sum, line) => sum + line.amountKobo,
+      0,
+    );
+    if (paymentTotalKobo !== calculated.grandTotalKobo) {
+      throw new HttpsError("invalid-argument", "Payment total must match sale total.");
+    }
+
+    for (const line of data.paymentLines) {
+      if (
+        ["bank_transfer", "pos_terminal"].includes(line.paymentMethod) &&
+        !line.reference
+      ) {
+        throw new HttpsError(
+          "invalid-argument",
+          "A payment reference is required for transfer and POS payments.",
+        );
+      }
+    }
+
+    const hasCredit = data.paymentLines.some((line) => line.paymentMethod === "credit");
+    let creditCustomerRef: FirebaseFirestore.DocumentReference | null = null;
+    let nextOutstandingBalanceKobo: number | null = null;
+    if (hasCredit) {
+      if (!settings.allowCreditSales || data.customerType !== "registered" || !customer.customerId) {
+        throw new HttpsError("failed-precondition", "Credit sale is not allowed.");
+      }
+      creditCustomerRef = adminDb().doc(`customers/${customer.customerId}`);
+      const customerSnapshot = await tx.get(creditCustomerRef);
+      if (!customerSnapshot.exists) {
+        throw new HttpsError("failed-precondition", "Customer is missing.");
+      }
+      const creditAmountKobo = data.paymentLines
+        .filter((line) => line.paymentMethod === "credit")
+        .reduce((sum, line) => sum + line.amountKobo, 0);
+      const creditLimitKobo = positiveInt(customerSnapshot.data()?.creditLimitKobo);
+      const outstandingBalanceKobo = positiveInt(
+        customerSnapshot.data()?.outstandingBalanceKobo,
+      );
+      nextOutstandingBalanceKobo = outstandingBalanceKobo + creditAmountKobo;
+      if (nextOutstandingBalanceKobo > creditLimitKobo) {
+        throw new HttpsError("failed-precondition", "Insufficient customer credit.");
+      }
+    }
+
+    const quantityByProduct = new Map<string, number>();
+    for (const item of calculated.items) {
+      quantityByProduct.set(
+        item.productId,
+        (quantityByProduct.get(item.productId) ?? 0) + item.quantity,
+      );
+    }
+    const productIds = [...quantityByProduct.keys()];
+    const inventoryRefs = productIds.map((productId) =>
+      adminDb().doc(`branches/${data.branchId}/inventory/${productId}`),
+    );
+    const financialRefs = productIds.map((productId) =>
+      adminDb().doc(`branches/${data.branchId}/inventoryFinancials/${productId}`),
+    );
+    const [inventorySnapshots, financialSnapshots] = await Promise.all([
+      Promise.all(inventoryRefs.map((inventoryRef) => tx.get(inventoryRef))),
+      Promise.all(financialRefs.map((financialRef) => tx.get(financialRef))),
+    ]);
+
+    const inventoryChanges = productIds.map((productId, index) => {
+      const inventorySnapshot = inventorySnapshots[index];
+      if (!inventorySnapshot.exists) {
+        throw new HttpsError("failed-precondition", "Inventory is missing.");
+      }
+      const inventory = inventorySnapshot.data();
+      const quantity = quantityByProduct.get(productId) ?? 0;
+      const before = {
+        onHandQty: positiveInt(inventory?.onHandQty),
+        reservedQty: positiveInt(inventory?.reservedQty),
+      };
+      if (before.onHandQty - before.reservedQty < quantity) {
+        throw new HttpsError("failed-precondition", "Insufficient available stock.");
+      }
+      const after = {
+        onHandQty: before.onHandQty - quantity,
+        reservedQty: before.reservedQty,
+      };
+      const financial = financialSnapshots[index].data();
+      const previousAverageUnitCostKobo = positiveInt(financial?.averageUnitCostKobo);
+      const previousStockValueKobo = positiveInt(financial?.stockValueKobo);
+      const removedValueKobo = stockRemovalValue(
+        quantity,
+        before.onHandQty,
+        previousAverageUnitCostKobo,
+        previousStockValueKobo,
+      );
+      return {
+        productId,
+        quantity,
+        inventory,
+        before,
+        after,
+        removedValueKobo,
+        nextStockValueKobo: Math.max(0, previousStockValueKobo - removedValueKobo),
+      };
+    });
+
+    const now = FieldValue.serverTimestamp();
+    const approvedAt = Timestamp.now();
+    if (creditCustomerRef && nextOutstandingBalanceKobo !== null) {
+      tx.update(creditCustomerRef, {
+        outstandingBalanceKobo: nextOutstandingBalanceKobo,
+        updatedAt: now,
+        updatedBy: actor.uid,
+      });
+    }
+
+    for (const [index, change] of inventoryChanges.entries()) {
+      tx.update(inventoryRefs[index], {
+        onHandQty: change.after.onHandQty,
+        soldQty: positiveInt(change.inventory?.soldQty) + change.quantity,
+        isLowStock:
+          change.after.onHandQty - change.after.reservedQty <=
+          positiveInt(change.inventory?.reorderLevel),
+        updatedAt: now,
+        updatedBy: actor.uid,
+      });
+      tx.set(
+        financialRefs[index],
+        {
+          productId: change.productId,
+          averageUnitCostKobo:
+            change.after.onHandQty > 0
+              ? Math.floor(change.nextStockValueKobo / change.after.onHandQty)
+              : 0,
+          stockValueKobo: change.nextStockValueKobo,
+          updatedAt: now,
+          updatedBy: actor.uid,
+        },
+        { merge: true },
+      );
+      tx.set(
+        adminDb().collection("stockMovements").doc(
+          `${orderRef.id}_stock_out_${change.productId}_${keyHash}`,
+        ),
+        {
+          ...movementData({
+            branchId: data.branchId,
+            productId: change.productId,
+            orderId: orderRef.id,
+            movementType: "stock_out",
+            quantity: change.quantity,
+            before: change.before,
+            after: change.after,
+            reason: "admin_direct_sale",
+            actor,
+            keyHash,
+          }),
+          unitCostKobo:
+            change.quantity > 0
+              ? Math.floor(change.removedValueKobo / change.quantity)
+              : 0,
+          inventoryValueImpactKobo: change.removedValueKobo,
+        },
+      );
+    }
+
+    const paymentIds = data.paymentLines.map((line, index) => {
+      const paymentId = `${keyHash}_${index}`;
+      const proofOverridden =
+        line.paymentMethod === "bank_transfer" && settings.requireTransferProof;
+      tx.set(orderRef.collection("payments").doc(paymentId), {
+        branchId: data.branchId,
+        orderId: orderRef.id,
+        paymentMethod: line.paymentMethod,
+        amountKobo: line.amountKobo,
+        reference: line.reference ?? null,
+        proofStoragePath: null,
+        proofRequired: proofOverridden,
+        proofOverridden,
+        proofOverrideReason: proofOverridden ? data.administrationReason : null,
+        receivedBy: actor.uid,
+        receivedAt: now,
+        status: "confirmed",
+        idempotencyKeyHash: keyHash,
+      });
+      tx.set(
+        adminDb().collection("financialTransactions").doc(`${orderRef.id}_${paymentId}`),
+        {
+          branchId: data.branchId,
+          orderId: orderRef.id,
+          paymentId,
+          transactionType: line.paymentMethod === "credit" ? "credit_sale" : "sale_payment",
+          paymentMethod: line.paymentMethod,
+          amountKobo: line.amountKobo,
+          direction: line.paymentMethod === "credit" ? "receivable" : "in",
+          reference: line.reference ?? null,
+          receivedBy: actor.uid,
+          createdAt: now,
+          idempotencyKeyHash: keyHash,
+        },
+      );
+      return paymentId;
+    });
+
+    const discounted = calculated.discountTotalKobo > 0;
+    const paymentStatus = hasCredit ? "credit" : "paid";
+    const response = safeResponse(orderRef.id, {
+      orderId: orderRef.id,
+      orderNumber,
+      status: "completed",
+      paymentStatus,
+      paymentIds,
+    });
+    tx.set(orderRef, {
+      orderNumber,
+      branchId: data.branchId,
+      customerType: data.customerType,
+      ...customer,
+      status: "completed",
+      paymentStatus,
+      items: calculated.items.map((item) =>
+        discounted
+          ? { ...item, discountApprovedBy: actor.uid, discountApprovedAt: approvedAt }
+          : item,
+      ),
+      subtotalKobo: calculated.subtotalKobo,
+      discountTotalKobo: calculated.discountTotalKobo,
+      grandTotalKobo: calculated.grandTotalKobo,
+      discountApprovalStatus: discounted ? "approved" : "not_required",
+      discountRequest: discounted
+        ? {
+            requestedBy: actor.uid,
+            requestedAt: now,
+            approvedBy: actor.uid,
+            approvedAt: now,
+            reason: data.administrationReason,
+            maxDiscountPercent: maxDiscountPercent(data.items),
+          }
+        : null,
+      createdBy: actor.uid,
+      createdAt: now,
+      paidBy: actor.uid,
+      paidAt: now,
+      releasedBy: actor.uid,
+      releasedAt: now,
+      updatedBy: actor.uid,
+      updatedAt: now,
+      expiresAt: null,
+      qrTokenHash: hashValue(qrToken),
+      qrTokenVersion: 1,
+      idempotencyKeyHash: keyHash,
+      verificationMethod: "admin_direct",
+      administeredSale: true,
+      administeredBy: actor.uid,
+      administeredAt: now,
+      administrationReason: data.administrationReason,
+      skippedWorkflowStages: ["cashier_handoff", "release_verifier_handoff"],
+    } satisfies OrderDocument & Record<string, unknown>);
+    tx.set(
+      adminDb().collection("auditLogs").doc(`administerSale_${orderRef.id}_${keyHash}`),
+      auditData(actor, "sale.administered", "order", orderRef.id, data.branchId, null, {
+        status: "completed",
+        paymentStatus,
+        grandTotalKobo: calculated.grandTotalKobo,
+        administrationReason: data.administrationReason,
+        skippedWorkflowStages: ["cashier_handoff", "release_verifier_handoff"],
+      }),
+    );
+    tx.set(ref, {
+      actorId: actor.uid,
+      operation: "administerSale",
+      keyHash,
+      entityId: orderRef.id,
+      responseSnapshot: response,
+      createdAt: now,
+    });
     return response;
   });
 }

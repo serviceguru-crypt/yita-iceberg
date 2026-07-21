@@ -4,6 +4,7 @@ import { FieldValue, Timestamp, getFirestore } from "firebase-admin/firestore";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  administerSaleAction,
   approveDiscountAction,
   cancelOrderAction,
   confirmPaymentAction,
@@ -389,6 +390,88 @@ describe("order reservation workflow", () => {
     expect(expired.expiredCount).toBe(1);
     expect(staleOrder.data()?.status).toBe("expired");
     expect(paidOrder.data()?.status).toBe("awaiting_release");
+  });
+});
+
+describe("administrator direct-sale workflow", () => {
+  it("completes an audited sale atomically while preserving existing reservations", async () => {
+    await createOrderAction("registrar-a", orderInput("idem-existing-reservation", 3));
+    await getFirestore().doc("branches/branch-a/inventoryFinancials/product-1").set({
+      productId: "product-1",
+      averageUnitCostKobo: 40_000,
+      stockValueKobo: 800_000,
+    });
+
+    const input = {
+      branchId: "branch-a",
+      customerType: "walk_in",
+      customerSnapshot: { name: "Direct customer", phone: "08012345678" },
+      items: [{
+        productId: "product-1",
+        quantity: 2,
+        discountPercent: 20,
+        discountReason: "Owner-authorized loyalty price",
+      }],
+      paymentLines: [
+        { paymentMethod: "cash", amountKobo: 60_000 },
+        { paymentMethod: "pos_terminal", amountKobo: 100_000, reference: "POS-123" },
+      ],
+      administrationReason: "Owner handled customer sale directly",
+      idempotencyKey: "idem-admin-direct-sale",
+    };
+
+    const result = await administerSaleAction("admin", input);
+    const repeated = await administerSaleAction("admin", input);
+    const db = getFirestore();
+    const [order, inventory, financial, payments, transactions, movements, audits] =
+      await Promise.all([
+        db.doc(`orders/${result.orderId}`).get(),
+        db.doc("branches/branch-a/inventory/product-1").get(),
+        db.doc("branches/branch-a/inventoryFinancials/product-1").get(),
+        db.collection(`orders/${result.orderId}/payments`).get(),
+        db.collection("financialTransactions").where("orderId", "==", result.orderId).get(),
+        db.collection("stockMovements").where("orderId", "==", result.orderId).get(),
+        db.collection("auditLogs").where("entityId", "==", result.orderId).get(),
+      ]);
+
+    expect(repeated.orderId).toBe(result.orderId);
+    expect(order.data()).toMatchObject({
+      status: "completed",
+      paymentStatus: "paid",
+      administeredSale: true,
+      administeredBy: "admin",
+      discountApprovalStatus: "approved",
+      grandTotalKobo: 160_000,
+    });
+    expect(inventory.data()).toMatchObject({ onHandQty: 18, reservedQty: 3, soldQty: 2 });
+    expect(financial.data()?.stockValueKobo).toBe(720_000);
+    expect(payments.size).toBe(2);
+    expect(transactions.size).toBe(2);
+    expect(movements.size).toBe(1);
+    expect(movements.docs[0].data()?.reason).toBe("admin_direct_sale");
+    expect(audits.docs.some((entry) => entry.data().action === "sale.administered")).toBe(true);
+  });
+
+  it("restricts direct sales to administrators and validates totals and stock", async () => {
+    const base = {
+      ...orderInput("idem-direct-denied", 1),
+      paymentLines: [{ paymentMethod: "cash", amountKobo: 100_000 }],
+      administrationReason: "Direct owner-assisted sale",
+    };
+    await expect(administerSaleAction("manager-a", base)).rejects.toMatchObject({
+      code: "permission-denied",
+    });
+    await expect(administerSaleAction("admin", {
+      ...base,
+      idempotencyKey: "idem-direct-total",
+      paymentLines: [{ paymentMethod: "cash", amountKobo: 99_999 }],
+    })).rejects.toMatchObject({ code: "invalid-argument" });
+    await expect(administerSaleAction("admin", {
+      ...base,
+      idempotencyKey: "idem-direct-stock",
+      items: [{ productId: "product-1", quantity: 21, discountPercent: 0 }],
+      paymentLines: [{ paymentMethod: "cash", amountKobo: 2_100_000 }],
+    })).rejects.toMatchObject({ code: "failed-precondition" });
   });
 });
 

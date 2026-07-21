@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { ref, uploadBytes } from "firebase/storage";
 
 import { BranchRequired } from "@/components/branch/branch-required";
 import { useBranchContext } from "@/components/branch/branch-context";
+import { ProductImage } from "@/components/catalog/product-image";
 import { QrCode } from "@/components/qr/qr-code";
 import { QrPrintButton } from "@/components/qr/qr-print-button";
 import { Field } from "@/components/shared/field";
@@ -12,6 +14,7 @@ import { OperationState } from "@/components/shared/operation-state";
 import { Button } from "@/components/ui/button";
 import { isAdminRole } from "@/lib/domain/roles";
 import { callFunction } from "@/lib/firebase/callables";
+import { getFirebaseServices } from "@/lib/firebase/client";
 import { parseNairaToKobo } from "@/lib/format/number";
 import { createIdempotencyKey } from "@/lib/idempotency";
 import type { ProductDocument } from "@/lib/types/operational";
@@ -84,6 +87,33 @@ async function fetchProduct(productId: string) {
     throw new Error(result.message || "Unable to load product.");
   }
 
+  return result.product;
+}
+
+async function uploadProductImage(productId: string, file: File, uploadedBy: string) {
+  const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+  if (!allowedTypes.has(file.type)) {
+    throw new Error("Use a JPEG, PNG, or WebP product image.");
+  }
+  if (file.size >= 5 * 1024 * 1024) {
+    throw new Error("Product images must be smaller than 5 MB.");
+  }
+
+  const imageStoragePath = `product-images/${productId}/primary`;
+  await uploadBytes(ref(getFirebaseServices().storage, imageStoragePath), file, {
+    contentType: file.type,
+    customMetadata: { productId, uploadedBy },
+  });
+  const response = await fetch(`/api/catalog/products/${productId}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify({ imageStoragePath, imageContentType: file.type }),
+  });
+  const result = (await response.json()) as ProductDetailResponse;
+  if (!response.ok || !result.ok || !result.product) {
+    throw new Error(result.message || "Unable to attach the product image.");
+  }
   return result.product;
 }
 
@@ -216,11 +246,14 @@ function ProductCatalog() {
             className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4"
             key={product.id}
           >
-            <div>
-              <p className="font-medium">{product.name}</p>
-              <p className="text-sm text-muted-foreground">
-                {product.sku} · {product.unit}
-              </p>
+            <div className="flex min-w-0 items-center gap-3">
+              <ProductImage alt={product.name} className="size-16" path={product.imageStoragePath} version={product.imageUpdatedAt} />
+              <div className="min-w-0">
+                <p className="font-medium">{product.name}</p>
+                <p className="text-sm text-muted-foreground">
+                  {product.sku} · {product.unit}
+                </p>
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <span className="rounded-md bg-secondary px-2 py-1 text-xs">
@@ -246,28 +279,39 @@ export function ProductFormClient() {
 }
 
 function ProductForm() {
+  const { user } = useBranchContext();
   const [name, setName] = useState("");
   const [unit, setUnit] = useState("");
   const [barcode, setBarcode] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [createdProduct, setCreatedProduct] = useState<CreateProductResponse | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
 
   async function submit() {
-    const result = await createProduct({
-      name,
-      unit,
-      ...(barcode.trim() ? { barcode } : {}),
-      idempotencyKey: createIdempotencyKey("product"),
-    });
+    setSaving(true);
+    setMessage(null);
+    try {
+      const result = await createProduct({
+        name,
+        unit,
+        ...(barcode.trim() ? { barcode } : {}),
+        idempotencyKey: createIdempotencyKey("product"),
+      });
+      if (imageFile) await uploadProductImage(result.productId!, imageFile, user.uid);
 
-    setCreatedProduct(result);
-    setMessage(`Product ${result.sku} created with a scannable QR code.`);
-    setName("");
-    setUnit("");
-    setBarcode("");
+      setCreatedProduct(result);
+      setMessage(`Product ${result.sku} created with a scannable QR code${imageFile ? " and image" : ""}.`);
+      setName("");
+      setUnit("");
+      setBarcode("");
+      setImageFile(null);
+    } finally {
+      setSaving(false);
+    }
   }
 
-  return <FormShell title="New product" backHref="/catalog/products">{message ? <OperationState detail={message} title="Created" /> : null}{createdProduct?.qrCodePayload ? <div className="print-surface app-surface flex flex-col gap-4 rounded-xl border p-4 sm:flex-row sm:items-center"><QrCode alt={`Product QR code for ${createdProduct.sku}`} payload={createdProduct.qrCodePayload} /><div className="space-y-3"><div><p className="text-sm font-semibold">Generated product label</p><p className="text-sm text-muted-foreground">SKU {createdProduct.sku}. Scan this QR to identify the product record.</p></div><QrPrintButton payload={createdProduct.qrCodePayload} /><Button asChild variant="outline"><Link href={`/catalog/products/${createdProduct.productId}`}>Open product</Link></Button></div></div> : null}<div className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">SKU and QR code will be generated automatically when the product is created.</div><Field label="Name"><input className="h-9 rounded-md border bg-background px-3" onChange={(e) => setName(e.target.value)} value={name} /></Field><Field label="Unit"><input className="h-9 rounded-md border bg-background px-3" onChange={(e) => setUnit(e.target.value)} value={unit} /></Field><Field label="Barcode"><input className="h-9 rounded-md border bg-background px-3" onChange={(e) => setBarcode(e.target.value)} value={barcode} /></Field><Button disabled={!name || !unit} onClick={() => void submit().catch((err) => setMessage(err instanceof Error ? err.message : "Create failed"))} type="button">Create product</Button></FormShell>;
+  return <FormShell title="New product" backHref="/catalog/products">{message ? <OperationState detail={message} title={createdProduct ? "Created" : "Product image"} /> : null}{createdProduct?.qrCodePayload ? <div className="print-surface app-surface flex flex-col gap-4 rounded-xl border p-4 sm:flex-row sm:items-center"><QrCode alt={`Product QR code for ${createdProduct.sku}`} payload={createdProduct.qrCodePayload} /><div className="space-y-3"><div><p className="text-sm font-semibold">Generated product label</p><p className="text-sm text-muted-foreground">SKU {createdProduct.sku}. Scan this QR to identify the product record.</p></div><QrPrintButton payload={createdProduct.qrCodePayload} /><Button asChild variant="outline"><Link href={`/catalog/products/${createdProduct.productId}`}>Open product</Link></Button></div></div> : null}<div className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">SKU and QR code will be generated automatically when the product is created.</div><Field label="Name"><input className="h-9 rounded-md border bg-background px-3" onChange={(e) => setName(e.target.value)} value={name} /></Field><Field label="Unit"><input className="h-9 rounded-md border bg-background px-3" onChange={(e) => setUnit(e.target.value)} value={unit} /></Field><Field label="Barcode"><input className="h-9 rounded-md border bg-background px-3" onChange={(e) => setBarcode(e.target.value)} value={barcode} /></Field><Field label="Product image"><input accept="image/jpeg,image/png,image/webp" className="block w-full rounded-md border bg-background p-2 text-sm" onChange={(event) => setImageFile(event.target.files?.[0] ?? null)} type="file" /></Field><Button disabled={saving || !name || !unit} onClick={() => void submit().catch((err) => setMessage(err instanceof Error ? err.message : "Create failed"))} type="button">{saving ? "Creating..." : "Create product"}</Button></FormShell>;
 }
 
 export function ProductDetailClient({ productId }: { productId: string }) {
@@ -279,6 +323,7 @@ export function ProductDetailClient({ productId }: { productId: string }) {
 }
 
 function ProductDetail({ productId }: { productId: string }) {
+  const { user } = useBranchContext();
   const [product, setProduct] = useState<ProductDocument | null>(null);
   const [name, setName] = useState("");
   const [unit, setUnit] = useState("");
@@ -287,6 +332,8 @@ function ProductDetail({ productId }: { productId: string }) {
   const [barcode, setBarcode] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   function populateFields(next: ProductDocument) {
     setProduct(next);
@@ -338,6 +385,19 @@ function ProductDetail({ productId }: { productId: string }) {
     setMessage("Product archived.");
   }
 
+  async function replaceImage() {
+    if (!imageFile) return;
+    setUploadingImage(true);
+    setMessage(null);
+    try {
+      populateFields(await uploadProductImage(productId, imageFile, user.uid));
+      setImageFile(null);
+      setMessage("Product image updated.");
+    } finally {
+      setUploadingImage(false);
+    }
+  }
+
   if (!product && message) {
     return <OperationState detail={message} title="Product unavailable" />;
   }
@@ -362,14 +422,19 @@ function ProductDetail({ productId }: { productId: string }) {
             {saving ? "Saving" : "Save changes"}
           </Button>
         </div>
-        {product.qrCodePayload ? (
-          <div className="print-surface app-surface h-fit rounded-xl border p-4">
-            <QrCode alt={`Product QR code for ${product.sku}`} payload={product.qrCodePayload} />
-            <div className="mt-3 flex justify-center"><QrPrintButton payload={product.qrCodePayload} /></div>
+        <div className="space-y-4">
+          <div className="app-surface space-y-3 rounded-lg border p-4">
+            <ProductImage alt={product.name} className="w-full max-w-64" path={product.imageStoragePath} version={product.imageUpdatedAt} />
+            <Field label={product.imageStoragePath ? "Replace product image" : "Add product image"}><input accept="image/jpeg,image/png,image/webp" className="block w-full rounded-md border bg-background p-2 text-sm" disabled={product.isActive === false} onChange={(event) => setImageFile(event.target.files?.[0] ?? null)} type="file" /></Field>
+            <Button disabled={!imageFile || uploadingImage || product.isActive === false} onClick={() => void replaceImage().catch((error) => setMessage(error instanceof Error ? error.message : "Image upload failed"))} type="button" variant="outline">{uploadingImage ? "Uploading..." : "Save image"}</Button>
           </div>
-        ) : (
-          <OperationState detail="This product was created before QR payload generation was enabled." title="QR unavailable" />
-        )}
+          {product.qrCodePayload ? (
+            <div className="print-surface app-surface h-fit rounded-xl border p-4">
+              <QrCode alt={`Product QR code for ${product.sku}`} payload={product.qrCodePayload} />
+              <div className="mt-3 flex justify-center"><QrPrintButton payload={product.qrCodePayload} /></div>
+            </div>
+          ) : <OperationState detail="This product was created before QR payload generation was enabled." title="QR unavailable" />}
+        </div>
       </div>
       <Button disabled={product.isActive === false} onClick={() => void archive().catch((err) => setMessage(err instanceof Error ? err.message : "Archive failed"))} type="button" variant="destructive">
         Archive product

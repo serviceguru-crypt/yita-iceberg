@@ -34,6 +34,9 @@ function toProduct(id: string, data: Record<string, unknown>) {
     unit: stringValue(data.unit),
     sellingPriceKobo: numberValue(data.sellingPriceKobo),
     isActive: data.isActive === true,
+    imageStoragePath:
+      typeof data.imageStoragePath === "string" ? data.imageStoragePath : null,
+    imageUpdatedAt: data.imageUpdatedAt ?? null,
   };
 }
 
@@ -153,8 +156,23 @@ export async function GET(request: Request) {
         orderId ? db.doc(`orders/${orderId}`).get() : Promise.resolve(null),
       ]);
 
+    const globalProductSnapshots = productsSnapshot.empty
+      ? []
+      : await db.getAll(
+          ...productsSnapshot.docs.map((item) => db.doc(`products/${item.id}`)),
+        );
+    const globalProducts = new Map(
+      globalProductSnapshots.map((item) => [item.id, item.data() ?? {}]),
+    );
     const products = productsSnapshot.docs
-      .map((item) => toProduct(item.id, item.data()))
+      .map((item) =>
+        toProduct(item.id, {
+          ...item.data(),
+          ...(globalProducts.get(item.id) ?? {}),
+          sellingPriceKobo: item.data().sellingPriceKobo,
+          isActive: item.data().isActive,
+        }),
+      )
       .sort((first, second) => first.name.localeCompare(second.name));
     const inventory = inventorySnapshot.docs.map((item) =>
       toInventory(item.id, item.data()),

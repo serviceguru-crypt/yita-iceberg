@@ -84,6 +84,11 @@ export const confirmPaymentSchema = z.object({
   idempotencyKey,
 });
 
+export const administerSaleSchema = createOrderSchema.extend({
+  paymentLines: z.array(paymentLineInputSchema).min(1),
+  administrationReason: z.string().trim().min(5).max(500),
+});
+
 export const verifyAndCompleteReleaseSchema = z
   .object({
     orderId: z.string().trim().min(1).optional(),
@@ -127,3 +132,4 @@ export const createPaymentProofUploadIntentSchema = z.object({
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 export type OrderItemInput = z.infer<typeof orderItemInputSchema>;
 export type PaymentLineInput = z.infer<typeof paymentLineInputSchema>;
+export type AdministerSaleInput = z.infer<typeof administerSaleSchema>;

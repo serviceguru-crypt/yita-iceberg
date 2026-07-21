@@ -71,6 +71,17 @@ service firebase.storage {
         && request.resource.contentType.matches('image/(jpeg|png|webp)|application/pdf');
     }
 
+    match /product-images/{productId}/{fileName} {
+      allow read: if activeUser();
+      allow create, update: if isAdmin()
+        && fileName == 'primary'
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp)')
+        && request.resource.metadata.productId == productId
+        && request.resource.metadata.uploadedBy == request.auth.uid;
+      allow delete: if isAdmin() && fileName == 'primary';
+    }
+
     match /report-exports/{allPaths=**} {
       allow read, write: if false;
     }

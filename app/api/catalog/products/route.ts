@@ -27,6 +27,9 @@ function toProduct(id: string, data: Record<string, unknown>): ProductDocument {
     unit: String(data.unit ?? ""),
     barcode: typeof data.barcode === "string" ? data.barcode : null,
     qrCodePayload: typeof data.qrCodePayload === "string" ? data.qrCodePayload : null,
+    imageStoragePath: typeof data.imageStoragePath === "string" ? data.imageStoragePath : null,
+    imageContentType: typeof data.imageContentType === "string" ? data.imageContentType : null,
+    imageUpdatedAt: data.imageUpdatedAt ?? null,
     sellingPriceKobo:
       typeof data.sellingPriceKobo === "number" ? data.sellingPriceKobo : undefined,
     minimumPriceKobo:

@@ -543,7 +543,9 @@ function BranchComparisonTable({ rows }: { rows: Record<string, unknown>[] }) {
 }
 
 function WorkflowLinks({ role }: { role: PlatformRole }) {
-  const visibleWorkflows = workflowCards.filter((workflow) => workflow.roles.includes(role));
+  const visibleWorkflows = workflowCards.filter(
+    (workflow) => isAdminRole(role) || workflow.roles.includes(role),
+  );
 
   return (
     <section className="space-y-3">
@@ -583,7 +585,7 @@ function WorkflowLinks({ role }: { role: PlatformRole }) {
 export function ReportsIndexClient() {
   const { user } = useBranchContext();
   const reports = Object.values(reportConfigs).filter((report) =>
-    reportRoles[report.type].includes(user.platformRole),
+    isAdminRole(user.platformRole) || reportRoles[report.type].includes(user.platformRole),
   );
   return (
     <div className="space-y-5">
@@ -606,7 +608,8 @@ export function ReportsIndexClient() {
 export function ReportPageClient({ reportType }: { reportType: Exclude<ReportType, "dashboard"> }) {
   const config = reportConfigs[reportType];
   const { selectedBranchId, user } = useBranchContext();
-  const allowed = reportRoles[reportType].includes(user.platformRole);
+  const allowed =
+    isAdminRole(user.platformRole) || reportRoles[reportType].includes(user.platformRole);
   const admin = isAdminRole(user.platformRole);
   const [branchScope, setBranchScope] = useState<BranchScope>(admin ? "all_branches" : "selected_branch");
   const [startDate, setStartDate] = useState(monthStart);

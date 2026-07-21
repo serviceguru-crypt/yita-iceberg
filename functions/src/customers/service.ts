@@ -8,13 +8,15 @@ import { canAccessBranch, type ActorProfile } from "../shared/roles";
 import { createCustomerSchema, updateCustomerSchema } from "./schemas";
 
 function ensureCustomerRole(actor: ActorProfile) {
+  if (["admin", "super_admin"].includes(actor.platformRole)) {
+    return;
+  }
+
   if (
     ![
       "order_registrar",
       "cashier",
       "branch_manager",
-      "admin",
-      "super_admin",
     ].includes(actor.platformRole)
   ) {
     throw new HttpsError("permission-denied", "Role is not allowed.");

@@ -10,6 +10,7 @@ import { OrderStatusBadge, PaymentStatusBadge } from "@/components/orders/status
 import { OperationState } from "@/components/shared/operation-state";
 import { Button } from "@/components/ui/button";
 import { orderStatuses, type OrderStatus } from "@/lib/domain/order-state";
+import { isAdminRole } from "@/lib/domain/roles";
 import { callFunction } from "@/lib/firebase/callables";
 import { formatNairaFromKobo } from "@/lib/format/number";
 import { createIdempotencyKey } from "@/lib/idempotency";
@@ -145,6 +146,11 @@ function OrdersContent() {
               New order
             </Link>
           </Button>
+          {isAdminRole(user.platformRole) ? (
+            <Button asChild variant="outline">
+              <Link href="/orders/direct">Administer sale</Link>
+            </Button>
+          ) : null}
         </div>
       </div>
 

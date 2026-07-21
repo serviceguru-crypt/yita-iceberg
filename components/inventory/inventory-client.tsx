@@ -16,6 +16,7 @@ import { IconPlus, IconRefresh } from "@tabler/icons-react";
 
 import { BranchRequired } from "@/components/branch/branch-required";
 import { useBranchContext } from "@/components/branch/branch-context";
+import { ProductImage } from "@/components/catalog/product-image";
 import { Field } from "@/components/shared/field";
 import { OperationState } from "@/components/shared/operation-state";
 import { Button } from "@/components/ui/button";
@@ -193,7 +194,7 @@ function InventoryList() {
               const available = item.onHandQty - item.reservedQty;
               return (
                 <tr key={item.id}>
-                  <td className="px-3 py-2"><p className="font-medium">{item.productName}</p><p className="text-xs text-muted-foreground">{item.sku} · {item.unit}</p></td>
+                  <td className="px-3 py-2"><div className="flex min-w-48 items-center gap-3"><ProductImage alt={item.productName ?? "Product"} className="size-12" path={item.imageStoragePath} version={item.imageUpdatedAt} /><div><p className="font-medium">{item.productName}</p><p className="text-xs text-muted-foreground">{item.sku} · {item.unit}</p></div></div></td>
                   <td className="px-3 py-2">{formatQuantity(item.onHandQty)}</td>
                   <td className="px-3 py-2">{formatQuantity(item.reservedQty)}</td>
                   <td className="px-3 py-2 font-medium">{formatQuantity(available)}</td>
@@ -253,8 +254,21 @@ function InventoryDetail({ productId }: { productId: string }) {
     async function load() {
       if (!selectedBranchId) return;
       const { db } = getFirebaseServices();
-      const inv = await getDoc(doc(db, `branches/${selectedBranchId}/inventory/${productId}`));
-      if (inv.exists()) setItem(fromDoc<InventoryDocument>(inv.id, inv.data()));
+      const [inv, product] = await Promise.all([
+        getDoc(doc(db, `branches/${selectedBranchId}/inventory/${productId}`)),
+        getDoc(doc(db, `products/${productId}`)),
+      ]);
+      if (inv.exists()) {
+        setItem(fromDoc<InventoryDocument>(inv.id, {
+          ...inv.data(),
+          ...(product.exists()
+            ? {
+                imageStoragePath: product.data().imageStoragePath ?? null,
+                imageUpdatedAt: product.data().imageUpdatedAt ?? null,
+              }
+            : {}),
+        }));
+      }
       if (admin) {
         const fin = await getDoc(doc(db, `branches/${selectedBranchId}/inventoryFinancials/${productId}`));
         if (fin.exists()) setFinancial(fromDoc<InventoryFinancialDocument>(fin.id, fin.data()));
@@ -271,7 +285,7 @@ function InventoryDetail({ productId }: { productId: string }) {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><h1 className="text-2xl font-semibold tracking-normal">{item.productName}</h1><p className="text-sm text-muted-foreground">{item.sku} · {item.unit}</p></div>
+        <div className="flex items-center gap-3"><ProductImage alt={item.productName ?? "Product"} className="size-20" path={item.imageStoragePath} version={item.imageUpdatedAt} /><div><h1 className="text-2xl font-semibold tracking-normal">{item.productName}</h1><p className="text-sm text-muted-foreground">{item.sku} · {item.unit}</p></div></div>
         <Button asChild variant="outline"><Link href="/inventory">Back</Link></Button>
       </div>
       <div className="grid gap-3 md:grid-cols-4">

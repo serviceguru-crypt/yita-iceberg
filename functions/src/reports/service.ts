@@ -78,6 +78,10 @@ function parseDateRange(input: { startDate?: string; endDate?: string }, default
 }
 
 function ensureRole(actor: ActorProfile, roles: string[]) {
+  if (["admin", "super_admin"].includes(actor.platformRole)) {
+    return;
+  }
+
   if (!roles.includes(actor.platformRole)) {
     throw new HttpsError("permission-denied", "Role is not allowed for this report.");
   }

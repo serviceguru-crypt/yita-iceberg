@@ -170,7 +170,11 @@ export function AppNavigation({
   role: PlatformRole;
   placement?: "side" | "bottom";
 }) {
-  const visibleItems = navItems.filter((item) => item.roles.includes(role));
+  const visibleItems = navItems.filter(
+    (item) =>
+      item.enabled &&
+      (role === "admin" || role === "super_admin" || item.roles.includes(role)),
+  );
   const pathname = usePathname();
 
   function isActive(href: string) {

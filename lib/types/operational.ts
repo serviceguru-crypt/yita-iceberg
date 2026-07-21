@@ -31,6 +31,9 @@ export type ProductDocument = {
   unit: string;
   barcode?: string | null;
   qrCodePayload?: string | null;
+  imageStoragePath?: string | null;
+  imageContentType?: string | null;
+  imageUpdatedAt?: unknown;
   sellingPriceKobo?: number;
   minimumPriceKobo?: number;
   isActive?: boolean;
@@ -50,6 +53,8 @@ export type InventoryDocument = {
   reorderLevel?: number;
   isLowStock?: boolean;
   isActive?: boolean;
+  imageStoragePath?: string | null;
+  imageUpdatedAt?: unknown;
   updatedAt?: unknown;
   updatedBy?: string;
 };
@@ -124,6 +129,11 @@ export type OrderDocument = {
   releasedBy?: string;
   releasedByName?: string;
   expiresAt?: unknown;
+  administeredSale?: boolean;
+  administeredBy?: string;
+  administeredAt?: unknown;
+  administrationReason?: string;
+  skippedWorkflowStages?: string[];
 };
 
 export type PaymentDocument = {

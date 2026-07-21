@@ -59,5 +59,8 @@ export function canViewAuditLogs(user: PermissionUser, branchId?: string) {
 }
 
 export function canManageCompanySettings(user: PermissionUser) {
-  return user.isActive && user.platformRole === "super_admin";
+  return (
+    user.isActive &&
+    (user.platformRole === "admin" || user.platformRole === "super_admin")
+  );
 }
