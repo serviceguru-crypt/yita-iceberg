@@ -34,12 +34,16 @@ export function OrdersPageClient() {
 
 function OrdersContent() {
   const { selectedBranch, selectedBranchId, user } = useBranchContext();
-  const [status, setStatus] = useState<OrderStatus | "all">("awaiting_payment");
+  const canApprove = ["branch_manager", "admin", "super_admin"].includes(
+    user.platformRole,
+  );
+  const [status, setStatus] = useState<OrderStatus | "all">(
+    canApprove ? "awaiting_discount_approval" : "awaiting_payment",
+  );
   const [search, setSearch] = useState("");
   const [orders, setOrders] = useState<OrderDocument[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const canApprove = ["branch_manager", "admin", "super_admin"].includes(user.platformRole);
 
   async function loadOrders() {
     if (!selectedBranchId) return;
@@ -107,12 +111,25 @@ function OrdersContent() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-normal">Orders</h1>
+          <h1 className="text-2xl font-semibold tracking-normal">
+            {canApprove ? "Orders & approvals" : "Orders"}
+          </h1>
           <p className="text-sm text-muted-foreground">
-            {selectedBranch?.name} operational queue
+            {canApprove
+              ? `${selectedBranch?.name} orders and negotiated discount decisions`
+              : `${selectedBranch?.name} operational queue`}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {canApprove ? (
+            <Button
+              onClick={() => setStatus("awaiting_discount_approval")}
+              type="button"
+              variant={status === "awaiting_discount_approval" ? "default" : "outline"}
+            >
+              Discount approvals
+            </Button>
+          ) : null}
           <Button onClick={() => void loadOrders()} type="button" variant="outline">
             <IconRefresh />
             Refresh
