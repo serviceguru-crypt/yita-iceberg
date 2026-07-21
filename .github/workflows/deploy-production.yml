@@ -47,14 +47,14 @@ jobs:
         run: npm run verify:production
         env:
           APP_ENV: production
-          APP_BASE_URL: ${{ vars.APP_BASE_URL }}
+          APP_BASE_URL: https://yita-iceberg--yita-iceberg.us-east4.hosted.app
           FIREBASE_PROJECT_ID: yita-iceberg
           NEXT_PUBLIC_FIREBASE_PROJECT_ID: yita-iceberg
-          NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
-          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ vars.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
-          NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ vars.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
-          NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
-          NEXT_PUBLIC_FIREBASE_APP_ID: ${{ vars.NEXT_PUBLIC_FIREBASE_APP_ID }}
+          NEXT_PUBLIC_FIREBASE_API_KEY: AIzaSyD4ZKF5iemf_DQ49PbbAGSiJ9PFVM_5elk
+          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: yita-iceberg.firebaseapp.com
+          NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: yita-iceberg.firebasestorage.app
+          NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "464641042034"
+          NEXT_PUBLIC_FIREBASE_APP_ID: 1:464641042034:web:7f5b1e37482078465244eb
           NEXT_PUBLIC_FIREBASE_APP_CHECK_SITE_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_CHECK_SITE_KEY }}
           NEXT_PUBLIC_USE_FIREBASE_EMULATORS: "false"
           NEXT_PUBLIC_ENABLE_APP_CHECK: "true"
@@ -81,13 +81,13 @@ jobs:
         run: npm run smoke:test
         env:
           APP_ENV: production
-          APP_BASE_URL: ${{ vars.APP_BASE_URL }}
+          APP_BASE_URL: https://yita-iceberg--yita-iceberg.us-east4.hosted.app
           FIREBASE_PROJECT_ID: yita-iceberg
-          NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
-          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ vars.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
-          NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ vars.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
-          NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
-          NEXT_PUBLIC_FIREBASE_APP_ID: ${{ vars.NEXT_PUBLIC_FIREBASE_APP_ID }}
+          NEXT_PUBLIC_FIREBASE_API_KEY: AIzaSyD4ZKF5iemf_DQ49PbbAGSiJ9PFVM_5elk
+          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: yita-iceberg.firebaseapp.com
+          NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: yita-iceberg.firebasestorage.app
+          NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "464641042034"
+          NEXT_PUBLIC_FIREBASE_APP_ID: 1:464641042034:web:7f5b1e37482078465244eb
           SMOKE_TEST_EMAIL: ${{ secrets.SMOKE_TEST_EMAIL }}
           SMOKE_TEST_PASSWORD: ${{ secrets.SMOKE_TEST_PASSWORD }}
           SMOKE_TEST_ALLOW_PRODUCTION: "true"
