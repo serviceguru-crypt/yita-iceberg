@@ -35,6 +35,7 @@ type CashierOrdersResponse = {
   orders?: OrderDocument[];
   order?: OrderDocument;
   payments?: PaymentDocument[];
+  awaitingApprovalCount?: number;
 };
 
 function newLine(): PaymentLine {
@@ -60,6 +61,7 @@ function CashierQueue() {
   const [lookup, setLookup] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [awaitingApprovalCount, setAwaitingApprovalCount] = useState(0);
 
   async function loadQueue() {
     if (!selectedBranchId) return;
@@ -77,6 +79,7 @@ function CashierQueue() {
       }
 
       setOrders(result.orders);
+      setAwaitingApprovalCount(result.awaitingApprovalCount ?? 0);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load payment queue.");
     } finally {
@@ -105,6 +108,12 @@ function CashierQueue() {
       </Field>
       {error ? <OperationState detail={error} title="Queue unavailable" /> : null}
       {loading ? <OperationState title="Loading payment queue" /> : null}
+      {!loading && !error && awaitingApprovalCount > 0 ? (
+        <OperationState
+          detail={`${awaitingApprovalCount} ${awaitingApprovalCount === 1 ? "order is" : "orders are"} waiting for manager discount approval before payment can be received.`}
+          title="Approval pending"
+        />
+      ) : null}
       <div className="grid gap-3">
         {filtered.map((order) => (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4" key={order.id}>

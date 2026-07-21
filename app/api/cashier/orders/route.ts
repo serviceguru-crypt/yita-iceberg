@@ -37,6 +37,17 @@ function dateValue(value: unknown) {
   return null;
 }
 
+function timestampMillis(value: unknown) {
+  if (value && typeof value === "object" && "toMillis" in value) {
+    const candidate = value as { toMillis?: () => number };
+    if (typeof candidate.toMillis === "function") {
+      return candidate.toMillis();
+    }
+  }
+
+  return 0;
+}
+
 function toOrder(id: string, data: Record<string, unknown>) {
   const customerSnapshot =
     data.customerSnapshot && typeof data.customerSnapshot === "object"
@@ -172,17 +183,29 @@ export async function GET(request: Request) {
       );
     }
 
-    const snapshot = await adminDb()
-      .collection("orders")
-      .where("branchId", "==", branchId)
-      .where("status", "==", "awaiting_payment")
-      .orderBy("createdAt", "desc")
-      .limit(25)
-      .get();
-    const orders = snapshot.docs.map((item) => toOrder(item.id, item.data()));
+    const db = adminDb();
+    const [paymentSnapshot, approvalSnapshot] = await Promise.all([
+      db.collection("orders").where("status", "==", "awaiting_payment").get(),
+      db
+        .collection("orders")
+        .where("status", "==", "awaiting_discount_approval")
+        .get(),
+    ]);
+    const orders = paymentSnapshot.docs
+      .filter((item) => item.data().branchId === branchId)
+      .sort(
+        (first, second) =>
+          timestampMillis(second.data().createdAt) -
+          timestampMillis(first.data().createdAt),
+      )
+      .slice(0, 25)
+      .map((item) => toOrder(item.id, item.data()));
+    const awaitingApprovalCount = approvalSnapshot.docs.filter(
+      (item) => item.data().branchId === branchId,
+    ).length;
 
     return NextResponse.json(
-      { ok: true, orders },
+      { ok: true, orders, awaitingApprovalCount },
       { headers: { "cache-control": "no-store" } },
     );
   } catch (error) {

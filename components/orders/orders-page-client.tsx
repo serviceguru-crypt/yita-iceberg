@@ -2,14 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import {
-  collection,
-  getDocs,
-  limit,
-  orderBy,
-  query,
-  where,
-} from "firebase/firestore";
 import { IconPlus, IconRefresh } from "@tabler/icons-react";
 
 import { BranchRequired } from "@/components/branch/branch-required";
@@ -19,17 +11,18 @@ import { OperationState } from "@/components/shared/operation-state";
 import { Button } from "@/components/ui/button";
 import { orderStatuses, type OrderStatus } from "@/lib/domain/order-state";
 import { callFunction } from "@/lib/firebase/callables";
-import { getFirebaseServices } from "@/lib/firebase/client";
 import { formatNairaFromKobo } from "@/lib/format/number";
 import { createIdempotencyKey } from "@/lib/idempotency";
 import type { OrderDocument } from "@/lib/types/operational";
 import { timestampLabel } from "@/lib/types/operational";
 
-function toOrder(id: string, data: Record<string, unknown>): OrderDocument {
-  return { id, ...(data as Omit<OrderDocument, "id">) };
-}
-
 const filterStatuses = orderStatuses.filter((status) => status !== "draft");
+
+type OrdersResponse = {
+  ok?: boolean;
+  message?: string;
+  orders?: OrderDocument[];
+};
 
 export function OrdersPageClient() {
   return (
@@ -54,19 +47,25 @@ function OrdersContent() {
     setError(null);
 
     try {
-      const clauses = [where("branchId", "==", selectedBranchId)];
-      if (status !== "all") clauses.push(where("status", "==", status));
-      const snapshot = await getDocs(
-        query(
-          collection(getFirebaseServices().db, "orders"),
-          ...clauses,
-          orderBy("createdAt", "desc"),
-          limit(30),
-        ),
+      const searchParams = new URLSearchParams({
+        branchId: selectedBranchId,
+        status,
+      });
+      const response = await fetch(`/api/orders?${searchParams}`, {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      const result = (await response.json()) as OrdersResponse;
+
+      if (!response.ok || !result.ok || !Array.isArray(result.orders)) {
+        throw new Error(result.message || "Unable to load orders for this branch.");
+      }
+
+      setOrders(result.orders);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Unable to load orders for this branch.",
       );
-      setOrders(snapshot.docs.map((doc) => toOrder(doc.id, doc.data())));
-    } catch {
-      setError("Unable to load orders for this branch.");
     } finally {
       setLoading(false);
     }
