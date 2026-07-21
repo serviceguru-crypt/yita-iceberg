@@ -25,6 +25,7 @@ import { callFunction } from "@/lib/firebase/callables";
 import { getFirebaseServices } from "@/lib/firebase/client";
 import { formatNairaFromKobo, formatQuantity, parseNairaToKobo } from "@/lib/format/number";
 import { createIdempotencyKey } from "@/lib/idempotency";
+import { useUserDisplayNames } from "@/lib/hooks/use-user-display-names";
 import type {
   ReversalPreview,
   ReversalType,
@@ -66,6 +67,7 @@ function ReversalList() {
   const [rows, setRows] = useState<SaleReversalDocument[]>([]);
   const [error, setError] = useState<string | null>(null);
   const manager = canManageReversals(user.platformRole);
+  const userName = useUserDisplayNames(rows.map((row) => row.requestedBy), selectedBranchId);
 
   async function load() {
     if (!selectedBranchId) return;
@@ -113,7 +115,7 @@ function ReversalList() {
       <div className="overflow-x-auto rounded-lg border">
         <table className="min-w-full text-left text-sm">
           <thead className="bg-muted text-xs uppercase text-muted-foreground">
-            <tr><th className="px-3 py-2">Reversal</th><th className="px-3 py-2">Order</th><th className="px-3 py-2">Type</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Refund</th><th className="px-3 py-2">Credit</th><th className="px-3 py-2">Requested</th><th className="px-3 py-2">Action</th></tr>
+            <tr><th className="px-3 py-2">Reversal</th><th className="px-3 py-2">Order</th><th className="px-3 py-2">Type</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Refund</th><th className="px-3 py-2">Credit</th><th className="px-3 py-2">Requested by</th><th className="px-3 py-2">Requested</th><th className="px-3 py-2">Action</th></tr>
           </thead>
           <tbody className="divide-y">
             {rows.map((row) => (
@@ -124,6 +126,7 @@ function ReversalList() {
                 <td className="px-3 py-2">{label(row.status)}</td>
                 <td className="px-3 py-2">{formatNairaFromKobo(row.refundAmountKobo)}</td>
                 <td className="px-3 py-2">{formatNairaFromKobo(row.creditReductionKobo)}</td>
+                <td className="px-3 py-2">{userName(row.requestedBy)}</td>
                 <td className="px-3 py-2">{timestampLabel(row.requestedAt)}</td>
                 <td className="px-3 py-2"><Button asChild size="sm" variant="outline"><Link href={`/reversals/${row.id}`}>Open</Link></Button></td>
               </tr>
@@ -290,9 +293,13 @@ export function ReversalDetailClient({ reversalId }: { reversalId: string }) {
 }
 
 function ReversalDetail({ reversalId }: { reversalId: string }) {
-  const { user } = useBranchContext();
+  const { selectedBranchId, user } = useBranchContext();
   const [row, setRow] = useState<SaleReversalDocument | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const userName = useUserDisplayNames(
+    [row?.requestedBy, row?.approvedBy, row?.completedBy, row?.rejectedBy],
+    row?.branchId || selectedBranchId,
+  );
   async function load() {
     const snapshot = await getDoc(doc(getFirebaseServices().db, "saleReversals", reversalId));
     if (snapshot.exists()) setRow(fromDoc<SaleReversalDocument>(snapshot.id, snapshot.data()));
@@ -330,9 +337,10 @@ function ReversalDetail({ reversalId }: { reversalId: string }) {
       <div className="rounded-lg border bg-card p-4 text-sm"><p className="font-medium">Reason</p><p className="mt-1 text-muted-foreground">{row.reason}</p></div>
       <ReversalItems items={row.items} />
       <div className="grid gap-2 rounded-lg border bg-card p-4 text-sm">
-        <p>Approved: {row.approvedBy ? `${row.approvedBy} · ${timestampLabel(row.approvedAt)}` : "Not approved"}</p>
-        <p>Completed: {row.completedBy ? `${row.completedBy} · ${timestampLabel(row.completedAt)}` : "Not completed"}</p>
-        <p>Rejected: {row.rejectedBy ? `${row.rejectedBy} · ${timestampLabel(row.rejectedAt)}` : "Not rejected"}</p>
+        <p>Requested by: {userName(row.requestedBy)} · {timestampLabel(row.requestedAt)}</p>
+        <p>Approved: {row.approvedBy ? `${userName(row.approvedBy)} · ${timestampLabel(row.approvedAt)}` : "Not approved"}</p>
+        <p>Completed: {row.completedBy ? `${userName(row.completedBy)} · ${timestampLabel(row.completedAt)}` : "Not completed"}</p>
+        <p>Rejected: {row.rejectedBy ? `${userName(row.rejectedBy)} · ${timestampLabel(row.rejectedAt)}` : "Not rejected"}</p>
       </div>
     </div>
   );
@@ -343,9 +351,11 @@ export function ReversalApprovalClient({ reversalId }: { reversalId: string }) {
 }
 
 function ReversalApproval({ reversalId }: { reversalId: string }) {
+  const { selectedBranchId } = useBranchContext();
   const [row, setRow] = useState<SaleReversalDocument | null>(null);
   const [note, setNote] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const userName = useUserDisplayNames([row?.requestedBy], row?.branchId || selectedBranchId);
   useEffect(() => {
     void getDoc(doc(getFirebaseServices().db, "saleReversals", reversalId)).then((snapshot) => {
       if (snapshot.exists()) setRow(fromDoc<SaleReversalDocument>(snapshot.id, snapshot.data()));
@@ -373,6 +383,7 @@ function ReversalApproval({ reversalId }: { reversalId: string }) {
         <Metric label="Requested item value" value={formatNairaFromKobo(row.reversalSubtotalKobo)} />
         <Metric label="Financial impact" value={label(row.financialImpact)} />
       </div>
+      <p className="text-sm text-muted-foreground">Requested by {userName(row.requestedBy)} · {timestampLabel(row.requestedAt)}</p>
       <ReversalItems items={row.items} />
       <Field label="Approval note or rejection reason"><textarea className="min-h-24 rounded-md border bg-background px-3 py-2" onChange={(event) => setNote(event.target.value)} value={note} /></Field>
       <div className="flex gap-2"><Button onClick={() => void decide("approve")} type="button">Approve</Button><Button onClick={() => void decide("reject")} type="button" variant="destructive">Reject</Button></div>

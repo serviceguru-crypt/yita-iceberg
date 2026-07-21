@@ -391,7 +391,8 @@ describe("report authorization and summaries", () => {
     expect(JSON.stringify(managerReport.rows)).not.toContain("proofStoragePath");
     const cashierReport = await getStaffActivityReportAction("cashier-a", input);
     expect(cashierReport.summary.ownActivityOnly).toBe(true);
-    expect(cashierReport.rows.every((row) => row.userId === "cashier-a")).toBe(true);
+    expect(cashierReport.rows.every((row) => row.user === "cashier-a")).toBe(true);
+    expect(cashierReport.rows.every((row) => !("userId" in row))).toBe(true);
   });
 
   it("exports CSV from authorized data and rejects cross-branch or excessive exports", async () => {

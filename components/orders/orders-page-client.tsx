@@ -83,7 +83,12 @@ function OrdersContent() {
     const term = search.trim().toLowerCase();
     if (!term) return orders;
     return orders.filter((order) =>
-      order.orderNumber.toLowerCase().includes(term),
+      [
+        order.orderNumber,
+        order.customerSnapshot?.name,
+        order.createdByName,
+        order.discountRequest?.requestedByName,
+      ].some((value) => value?.toLowerCase().includes(term)),
     );
   }, [orders, search]);
 
@@ -182,6 +187,7 @@ function OrdersContent() {
               <th className="px-3 py-2">Customer</th>
               <th className="px-3 py-2">Status</th>
               <th className="px-3 py-2">Payment</th>
+              <th className="px-3 py-2">Staff</th>
               <th className="px-3 py-2 text-right">Total</th>
               <th className="px-3 py-2">Created</th>
               <th className="px-3 py-2">Actions</th>
@@ -196,6 +202,14 @@ function OrdersContent() {
                 </td>
                 <td className="px-3 py-2"><OrderStatusBadge status={order.status} /></td>
                 <td className="px-3 py-2"><PaymentStatusBadge status={order.paymentStatus} /></td>
+                <td className="px-3 py-2">
+                  <p className="font-medium">
+                    {order.discountRequest?.requestedByName || order.createdByName || "Staff member"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {order.status === "awaiting_discount_approval" ? "Requested discount" : "Created order"}
+                  </p>
+                </td>
                 <td className="px-3 py-2 text-right font-medium">{formatNairaFromKobo(order.grandTotalKobo)}</td>
                 <td className="px-3 py-2">{timestampLabel(order.createdAt)}</td>
                 <td className="px-3 py-2">
@@ -224,7 +238,7 @@ function OrdersContent() {
             ))}
             {!loading && visibleOrders.length === 0 ? (
               <tr>
-                <td className="px-3 py-8 text-center text-muted-foreground" colSpan={7}>
+                <td className="px-3 py-8 text-center text-muted-foreground" colSpan={8}>
                   No orders found for this branch and filter.
                 </td>
               </tr>

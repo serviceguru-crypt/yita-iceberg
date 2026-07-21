@@ -109,16 +109,20 @@ export type OrderDocument = {
   discountRequest?: {
     reason?: string | null;
     requestedBy?: string;
+    requestedByName?: string;
     requestedAt?: unknown;
     maxDiscountPercent?: number;
   } | null;
   createdBy: string;
+  createdByName?: string;
   createdAt?: unknown;
   updatedAt?: unknown;
   paidAt?: unknown;
   paidBy?: string;
+  paidByName?: string;
   releasedAt?: unknown;
   releasedBy?: string;
+  releasedByName?: string;
   expiresAt?: unknown;
 };
 
@@ -128,6 +132,7 @@ export type PaymentDocument = {
   amountKobo: number;
   reference?: string | null;
   receivedBy?: string;
+  receivedByName?: string;
   receivedAt?: unknown;
   status?: string;
 };

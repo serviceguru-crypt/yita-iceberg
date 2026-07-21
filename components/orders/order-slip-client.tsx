@@ -16,6 +16,7 @@ import { callFunction } from "@/lib/firebase/callables";
 import { getFirebaseServices } from "@/lib/firebase/client";
 import { formatNairaFromKobo } from "@/lib/format/number";
 import { createIdempotencyKey } from "@/lib/idempotency";
+import { useUserDisplayNames } from "@/lib/hooks/use-user-display-names";
 import {
   clearOrderQrToken,
   readOrderQrToken,
@@ -40,6 +41,7 @@ function OrderSlipContent({ orderId }: { orderId: string }) {
   const [qr, setQr] = useState<StoredQr | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const userName = useUserDisplayNames([order?.createdBy], selectedBranchId);
 
   async function loadOrder() {
     setLoading(true);
@@ -120,6 +122,7 @@ function OrderSlipContent({ orderId }: { orderId: string }) {
         <div className="mt-5 grid gap-3 text-sm md:grid-cols-2">
           <div><span className="text-muted-foreground">Order number</span><p className="font-medium">{order.orderNumber}</p></div>
           <div><span className="text-muted-foreground">Created</span><p className="font-medium">{timestampLabel(order.createdAt)}</p></div>
+          <div><span className="text-muted-foreground">Registered by</span><p className="font-medium">{userName(order.createdBy)}</p></div>
           <div><span className="text-muted-foreground">Customer</span><p className="font-medium">{order.customerSnapshot?.name || "Walk-in customer"}</p></div>
           <div><span className="text-muted-foreground">Status</span><div className="mt-1"><OrderStatusBadge status={order.status} /></div></div>
         </div>

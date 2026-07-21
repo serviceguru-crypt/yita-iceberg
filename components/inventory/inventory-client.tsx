@@ -24,6 +24,7 @@ import { callFunction } from "@/lib/firebase/callables";
 import { getFirebaseServices } from "@/lib/firebase/client";
 import { formatNairaFromKobo, formatQuantity, parseNairaToKobo } from "@/lib/format/number";
 import { createIdempotencyKey } from "@/lib/idempotency";
+import { useUserDisplayNames } from "@/lib/hooks/use-user-display-names";
 import type {
   InventoryAdjustmentRequestDocument,
   InventoryDocument,
@@ -429,8 +430,10 @@ export function StockReceiptDetailClient({ receiptId }: { receiptId: string }) {
 }
 
 function StockReceiptDetail({ receiptId }: { receiptId: string }) {
+  const { selectedBranchId } = useBranchContext();
   const [receipt, setReceipt] = useState<StockReceiptDocument | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const userName = useUserDisplayNames([receipt?.receivedBy], receipt?.branchId || selectedBranchId);
 
   useEffect(() => {
     void getDoc(doc(getFirebaseServices().db, "stockReceipts", receiptId))
@@ -477,7 +480,7 @@ function StockReceiptDetail({ receiptId }: { receiptId: string }) {
       <div className="grid gap-2 rounded-lg border bg-card p-4 text-sm sm:grid-cols-2">
         <p><span className="text-muted-foreground">Supplier reference:</span> {receipt.supplierReference || "Not recorded"}</p>
         <p><span className="text-muted-foreground">Delivery reference:</span> {receipt.deliveryReference || "Not recorded"}</p>
-        <p><span className="text-muted-foreground">Received by:</span> {receipt.receivedBy}</p>
+        <p><span className="text-muted-foreground">Received by:</span> {userName(receipt.receivedBy)}</p>
         <p><span className="text-muted-foreground">Status:</span> {receipt.status}</p>
         {receipt.notes ? <p className="sm:col-span-2"><span className="text-muted-foreground">Notes:</span> {receipt.notes}</p> : null}
       </div>
@@ -538,9 +541,13 @@ export function AdjustmentDetailClient({ requestId }: { requestId: string }) {
 }
 
 function AdjustmentDetail({ requestId }: { requestId: string }) {
-  const { user } = useBranchContext();
+  const { selectedBranchId, user } = useBranchContext();
   const [row, setRow] = useState<InventoryAdjustmentRequestDocument | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const userName = useUserDisplayNames(
+    [row?.requestedBy, row?.reviewedBy],
+    row?.branchId || selectedBranchId,
+  );
   async function load() {
     const snapshot = await getDoc(doc(getFirebaseServices().db, "inventoryAdjustmentRequests", requestId));
     if (snapshot.exists()) setRow(fromDoc<InventoryAdjustmentRequestDocument>(snapshot.id, snapshot.data()));
@@ -557,7 +564,13 @@ function AdjustmentDetail({ requestId }: { requestId: string }) {
   const canApprove = canManageInventory(user.platformRole);
   return <FormShell title="Stock correction" backHref="/inventory/adjustments">
     {message ? <OperationState detail={message} title="Updated" /> : null}
-    <div className="rounded-lg border bg-card p-4 text-sm"><p className="font-medium">{row.adjustmentType.replaceAll("_", " ")} · {row.quantity}</p><p className="text-muted-foreground">{row.reason}</p><p className="mt-2">Status: {row.status}</p></div>
+    <div className="grid gap-2 rounded-lg border bg-card p-4 text-sm">
+      <p className="font-medium">{row.adjustmentType.replaceAll("_", " ")} · {row.quantity}</p>
+      <p className="text-muted-foreground">{row.reason}</p>
+      <p>Requested by: {userName(row.requestedBy)} · {timestampLabel(row.requestedAt)}</p>
+      <p>Status: {row.status}</p>
+      {row.reviewedBy ? <p>Reviewed by: {userName(row.reviewedBy)} · {timestampLabel(row.reviewedAt)}</p> : null}
+    </div>
     {canApprove && row.status === "pending" ? <div className="flex gap-2"><Button onClick={() => void decide("approveInventoryAdjustment")} type="button">Approve</Button><Button onClick={() => void decide("rejectInventoryAdjustment")} type="button" variant="destructive">Reject</Button></div> : null}
   </FormShell>;
 }
@@ -607,11 +620,15 @@ export function StockCountDetailClient({ stockCountId }: { stockCountId: string 
 }
 
 function StockCountDetail({ stockCountId }: { stockCountId: string }) {
-  const { user } = useBranchContext();
+  const { selectedBranchId, user } = useBranchContext();
   const [count, setCount] = useState<StockCountDocument | null>(null);
   const [items, setItems] = useState<StockCountItemDocument[]>([]);
   const [inputs, setInputs] = useState<CountInput[]>([]);
   const [message, setMessage] = useState<string | null>(null);
+  const userName = useUserDisplayNames(
+    [count?.startedBy, count?.submittedBy, count?.reviewedBy],
+    count?.branchId || selectedBranchId,
+  );
   async function load() {
     const { db } = getFirebaseServices();
     const countSnapshot = await getDoc(doc(db, "stockCounts", stockCountId));
@@ -638,7 +655,12 @@ function StockCountDetail({ stockCountId }: { stockCountId: string }) {
   const canApprove = canManageInventory(user.platformRole);
   return <FormShell title={count.stockCountNumber} backHref="/inventory/counts">
     {message ? <OperationState detail={message} title="Updated" /> : null}
-    <p className="text-sm text-muted-foreground">Status: {count.status}. Inventory changes only after approval.</p>
+    <div className="grid gap-1 text-sm text-muted-foreground">
+      <p>Status: {count.status}. Inventory changes only after approval.</p>
+      <p>Started by: {userName(count.startedBy)} · {timestampLabel(count.startedAt)}</p>
+      {count.submittedBy ? <p>Submitted by: {userName(count.submittedBy)} · {timestampLabel(count.submittedAt)}</p> : null}
+      {count.reviewedBy ? <p>Reviewed by: {userName(count.reviewedBy)} · {timestampLabel(count.reviewedAt)}</p> : null}
+    </div>
     <div className="space-y-2">{items.map((item) => <div className="grid gap-2 rounded-lg border bg-card p-3 md:grid-cols-[1fr_160px_160px]" key={item.id}><span>{item.productId}</span><span>Expected {item.expectedOnHandQtyAtStart}</span><input className="h-9 rounded-md border bg-background px-3" disabled={count.status !== "open"} onChange={(e) => setInputs(inputs.map((input) => input.productId === item.productId ? { ...input, countedQty: e.target.value } : input))} placeholder="Counted" value={inputs.find((input) => input.productId === item.productId)?.countedQty ?? ""} /></div>)}</div>
     {count.status === "open" ? <Button onClick={() => void submit().catch((err) => setMessage(err instanceof Error ? err.message : "Submit failed"))} type="button">Submit count</Button> : null}
     {canApprove && count.status === "submitted" ? <div className="flex gap-2"><Button onClick={() => void decide("approveStockCount").catch((err) => setMessage(err instanceof Error ? err.message : "Approval failed"))} type="button">Approve</Button><Button onClick={() => void decide("rejectStockCount")} type="button" variant="destructive">Reject</Button></div> : null}

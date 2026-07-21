@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { callFunction } from "@/lib/firebase/callables";
 import { getFirebaseServices } from "@/lib/firebase/client";
 import { createIdempotencyKey } from "@/lib/idempotency";
+import { useUserDisplayNames } from "@/lib/hooks/use-user-display-names";
 import {
   clearReleaseQrToken,
   readReleaseQrToken,
@@ -169,6 +170,7 @@ function ReleaseComplete({ orderId }: { orderId: string }) {
   const [qrToken, setQrToken] = useState<string | null>(null);
   const [completed, setCompleted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const userName = useUserDisplayNames([order?.releasedBy], selectedBranchId);
 
   async function loadOrder() {
     try {
@@ -255,7 +257,7 @@ function ReleaseComplete({ orderId }: { orderId: string }) {
           {order.status === "completed" ? (
             <div className="grid gap-2 border-t pt-3 text-sm">
               <div><span className="text-muted-foreground">Released</span><p className="font-medium">{timestampLabel(order.releasedAt)}</p></div>
-              <div><span className="text-muted-foreground">Released by</span><p className="font-medium">{order.releasedBy || user.displayName}</p></div>
+              <div><span className="text-muted-foreground">Released by</span><p className="font-medium">{order.releasedBy ? userName(order.releasedBy) : user.displayName}</p></div>
             </div>
           ) : null}
         </section>

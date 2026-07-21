@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import type { PlatformRole } from "@/lib/domain/roles";
 import { canAccessBranch } from "@/lib/permissions/policy";
 import { getCurrentUser } from "@/lib/server/auth/session";
+import { loadUserDisplayNames } from "@/lib/server/display-names";
 import { adminDb } from "@/lib/server/firebase-admin";
 
 const cashierRoles = new Set<PlatformRole>([
@@ -93,6 +94,10 @@ function toOrder(id: string, data: Record<string, unknown>) {
     createdBy: stringValue(data.createdBy),
     createdAt: dateValue(data.createdAt),
     updatedAt: dateValue(data.updatedAt),
+    paidBy: stringValue(data.paidBy) || undefined,
+    paidAt: dateValue(data.paidAt),
+    releasedBy: stringValue(data.releasedBy) || undefined,
+    releasedAt: dateValue(data.releasedAt),
   };
 }
 
@@ -106,6 +111,18 @@ function toPayment(id: string, data: Record<string, unknown>) {
     receivedAt: dateValue(data.receivedAt),
     status: stringValue(data.status) || undefined,
   };
+}
+
+async function addOrderNames<T extends ReturnType<typeof toOrder>>(orders: T[]) {
+  const names = await loadUserDisplayNames(
+    orders.flatMap((order) => [order.createdBy, order.paidBy, order.releasedBy]),
+  );
+  return orders.map((order) => ({
+    ...order,
+    createdByName: names[order.createdBy],
+    paidByName: order.paidBy ? names[order.paidBy] : undefined,
+    releasedByName: order.releasedBy ? names[order.releasedBy] : undefined,
+  }));
 }
 
 export async function GET(request: Request) {
@@ -161,7 +178,9 @@ export async function GET(request: Request) {
         );
       }
 
-      const order = toOrder(snapshot.id, snapshot.data() ?? {});
+      const [order] = await addOrderNames([
+        toOrder(snapshot.id, snapshot.data() ?? {}),
+      ]);
 
       if (order.branchId !== branchId) {
         return NextResponse.json(
@@ -176,9 +195,18 @@ export async function GET(request: Request) {
       const payments = paymentsSnapshot.docs.map((item) =>
         toPayment(item.id, item.data()),
       );
+      const paymentNames = await loadUserDisplayNames(
+        payments.map((payment) => payment.receivedBy),
+      );
+      const namedPayments = payments.map((payment) => ({
+        ...payment,
+        receivedByName: payment.receivedBy
+          ? paymentNames[payment.receivedBy]
+          : undefined,
+      }));
 
       return NextResponse.json(
-        { ok: true, order, payments },
+        { ok: true, order, payments: namedPayments },
         { headers: { "cache-control": "no-store" } },
       );
     }
@@ -191,7 +219,7 @@ export async function GET(request: Request) {
         .where("status", "==", "awaiting_discount_approval")
         .get(),
     ]);
-    const orders = paymentSnapshot.docs
+    const orders = await addOrderNames(paymentSnapshot.docs
       .filter((item) => item.data().branchId === branchId)
       .sort(
         (first, second) =>
@@ -199,7 +227,7 @@ export async function GET(request: Request) {
           timestampMillis(first.data().createdAt),
       )
       .slice(0, 25)
-      .map((item) => toOrder(item.id, item.data()));
+      .map((item) => toOrder(item.id, item.data())));
     const awaitingApprovalCount = approvalSnapshot.docs.filter(
       (item) => item.data().branchId === branchId,
     ).length;

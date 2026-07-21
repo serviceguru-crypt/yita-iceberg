@@ -12,6 +12,7 @@ import { OperationState } from "@/components/shared/operation-state";
 import { Button } from "@/components/ui/button";
 import { getFirebaseServices } from "@/lib/firebase/client";
 import { formatNairaFromKobo } from "@/lib/format/number";
+import { useUserDisplayNames } from "@/lib/hooks/use-user-display-names";
 import type { OrderDocument } from "@/lib/types/operational";
 import { timestampLabel } from "@/lib/types/operational";
 
@@ -28,6 +29,7 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
   const [order, setOrder] = useState<OrderDocument | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const userName = useUserDisplayNames([order?.createdBy], selectedBranchId);
 
   async function loadOrder() {
     setLoading(true);
@@ -62,7 +64,9 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-normal">{order.orderNumber}</h1>
-          <p className="text-sm text-muted-foreground">Created {timestampLabel(order.createdAt)}</p>
+          <p className="text-sm text-muted-foreground">
+            Created {timestampLabel(order.createdAt)} by {userName(order.createdBy)}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline"><Link href="/orders">Back</Link></Button>

@@ -297,6 +297,7 @@ function PaymentContent({ orderId }: { orderId: string }) {
                 <div>
                   <p className="font-medium">{order.customerSnapshot?.name || "Walk-in customer"}</p>
                   <p className="text-sm text-muted-foreground">{order.customerSnapshot?.phone || "No phone recorded"}</p>
+                  <p className="text-sm text-muted-foreground">Registered by {order.createdByName || "Staff member"}</p>
                 </div>
                 <div className="flex gap-2">
                   <OrderStatusBadge status={order.status} />
@@ -427,15 +428,17 @@ function PaymentReceipt({ orderId }: { orderId: string }) {
           <div><span className="text-muted-foreground">Status</span><p className="font-medium">PAID — AWAITING RELEASE</p></div>
           <div><span className="text-muted-foreground">Customer</span><p className="font-medium">{order.customerSnapshot?.name || "Walk-in customer"}</p></div>
           <div><span className="text-muted-foreground">Paid</span><p className="font-medium">{timestampLabel(order.paidAt)}</p></div>
+          <div><span className="text-muted-foreground">Received by</span><p className="font-medium">{order.paidByName || "Staff member"}</p></div>
         </div>
         <div className="mt-5 overflow-x-auto rounded-lg border">
           <table className="min-w-full text-sm">
-            <thead className="bg-muted text-left text-xs uppercase text-muted-foreground"><tr><th className="px-3 py-2">Method</th><th className="px-3 py-2">Reference</th><th className="px-3 py-2 text-right">Amount</th></tr></thead>
+            <thead className="bg-muted text-left text-xs uppercase text-muted-foreground"><tr><th className="px-3 py-2">Method</th><th className="px-3 py-2">Reference</th><th className="px-3 py-2">Cashier</th><th className="px-3 py-2 text-right">Amount</th></tr></thead>
             <tbody className="divide-y">
               {payments.map((payment) => (
                 <tr key={payment.id}>
                   <td className="px-3 py-2">{payment.paymentMethod.replaceAll("_", " ")}</td>
-                  <td className="px-3 py-2">{payment.reference || payment.id}</td>
+                  <td className="px-3 py-2">{payment.reference || "Not recorded"}</td>
+                  <td className="px-3 py-2">{payment.receivedByName || "Staff member"}</td>
                   <td className="px-3 py-2 text-right">{formatNairaFromKobo(payment.amountKobo)}</td>
                 </tr>
               ))}

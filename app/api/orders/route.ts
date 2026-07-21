@@ -4,6 +4,7 @@ import { orderStatuses, type OrderStatus } from "@/lib/domain/order-state";
 import type { PlatformRole } from "@/lib/domain/roles";
 import { canAccessBranch } from "@/lib/permissions/policy";
 import { getCurrentUser } from "@/lib/server/auth/session";
+import { loadUserDisplayNames } from "@/lib/server/display-names";
 import { adminDb } from "@/lib/server/firebase-admin";
 
 const orderRoles = new Set<PlatformRole>([
@@ -105,7 +106,7 @@ export async function GET(request: Request) {
       requestedStatus === "all"
         ? await collection.where("branchId", "==", branchId).get()
         : await collection.where("status", "==", requestedStatus).get();
-    const orders = snapshot.docs
+    const orders: Array<Record<string, unknown> & { id: string }> = snapshot.docs
       .filter((item) => item.data().branchId === branchId)
       .sort(
         (first, second) =>
@@ -113,13 +114,57 @@ export async function GET(request: Request) {
           timestampMillis(first.data().createdAt),
       )
       .slice(0, 30)
-      .map((item) => ({
-        id: item.id,
-        ...(serializeValue(item.data()) as Record<string, unknown>),
-      }));
+      .map((item) => {
+        const data = serializeValue(item.data()) as Record<string, unknown>;
+        return { id: item.id, ...data };
+      });
+    const names = await loadUserDisplayNames(
+      orders.flatMap((order) => {
+        const discountRequest =
+          order.discountRequest && typeof order.discountRequest === "object"
+            ? (order.discountRequest as Record<string, unknown>)
+            : null;
+        return [
+          typeof order.createdBy === "string" ? order.createdBy : null,
+          typeof order.paidBy === "string" ? order.paidBy : null,
+          typeof order.releasedBy === "string" ? order.releasedBy : null,
+          typeof discountRequest?.requestedBy === "string"
+            ? discountRequest.requestedBy
+            : null,
+        ];
+      }),
+    );
+    const namedOrders = orders.map((order) => {
+      const discountRequest =
+        order.discountRequest && typeof order.discountRequest === "object"
+          ? (order.discountRequest as Record<string, unknown>)
+          : null;
+      const requestedBy =
+        typeof discountRequest?.requestedBy === "string"
+          ? discountRequest.requestedBy
+          : null;
+
+      return {
+        ...order,
+        createdByName:
+          typeof order.createdBy === "string" ? names[order.createdBy] : undefined,
+        paidByName:
+          typeof order.paidBy === "string" ? names[order.paidBy] : undefined,
+        releasedByName:
+          typeof order.releasedBy === "string" ? names[order.releasedBy] : undefined,
+        ...(discountRequest
+          ? {
+              discountRequest: {
+                ...discountRequest,
+                requestedByName: requestedBy ? names[requestedBy] : undefined,
+              },
+            }
+          : {}),
+      };
+    });
 
     return NextResponse.json(
-      { ok: true, orders },
+      { ok: true, orders: namedOrders },
       { headers: { "cache-control": "no-store" } },
     );
   } catch (error) {

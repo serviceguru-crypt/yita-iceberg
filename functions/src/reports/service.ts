@@ -96,6 +96,36 @@ async function loadBranches() {
   return names;
 }
 
+async function loadDocumentNames(
+  collection: "users" | "customers",
+  ids: Array<unknown>,
+) {
+  const uniqueIds = [...new Set(ids.filter((value): value is string => typeof value === "string" && Boolean(value)))];
+  const names: Record<string, string> = {};
+  if (collection === "users" && uniqueIds.includes("system")) names.system = "System";
+  const documentIds = uniqueIds.filter((id) => id !== "system");
+  if (documentIds.length === 0) return names;
+
+  const snapshots = await adminDb().getAll(
+    ...documentIds.map((id) => adminDb().doc(`${collection}/${id}`)),
+  );
+  for (const snapshot of snapshots) {
+    if (!snapshot.exists) continue;
+    const data = snapshot.data() ?? {};
+    const name = collection === "users" ? data.displayName : data.name;
+    if (typeof name === "string" && name.trim()) names[snapshot.id] = name.trim();
+  }
+  return names;
+}
+
+function resolvedName(
+  names: Record<string, string>,
+  id: unknown,
+  fallback: string,
+) {
+  return typeof id === "string" ? names[id] ?? fallback : fallback;
+}
+
 async function resolveBranchScope(actor: ActorProfile, input: Pick<ReportInput, "branchId" | "branchScope">): Promise<BranchScope> {
   const branchNames = await loadBranches();
   if (input.branchScope === "all_branches") {
@@ -216,12 +246,37 @@ async function getPaymentLines(orderIds: string[]) {
   return rows;
 }
 
-function orderCustomerName(order: Record<string, unknown>) {
+function orderCustomerName(
+  order: Record<string, unknown>,
+  customerNames: Record<string, string> = {},
+) {
   const snapshot = order.customerSnapshot;
   if (snapshot && typeof snapshot === "object" && "name" in snapshot && typeof snapshot.name === "string") {
     return snapshot.name;
   }
-  return order.customerType === "registered" ? text(order.customerId, "Registered customer") : "Walk-in customer";
+  return order.customerType === "registered"
+    ? resolvedName(customerNames, order.customerId, "Registered customer")
+    : "Walk-in customer";
+}
+
+async function loadOrderCustomerNames(orderIds: Array<unknown>) {
+  const ids = [...new Set(orderIds.filter((value): value is string => typeof value === "string" && Boolean(value)))];
+  if (ids.length === 0) return {};
+  const snapshots = await adminDb().getAll(
+    ...ids.map((id) => adminDb().doc(`orders/${id}`)),
+  );
+  const orders = snapshots.filter((snapshot) => snapshot.exists);
+  const customerNames = await loadDocumentNames(
+    "customers",
+    orders.map((snapshot) => snapshot.data()?.customerId),
+  );
+
+  return Object.fromEntries(
+    orders.map((snapshot) => [
+      snapshot.id,
+      orderCustomerName(snapshot.data() ?? {}, customerNames),
+    ]),
+  );
 }
 
 function saleStatusCounts(orders: Record<string, unknown>[]) {
@@ -259,6 +314,10 @@ async function salesReport(actor: ActorProfile, input: ReportInput, defaults: "t
   if (range.days > maxDetailReportDays()) throw new HttpsError("invalid-argument", "Sales report date range is too large.");
   const scope = await resolveBranchScope(actor, input);
   const allOrders = applyOrderFilters(await queryOrders(range, scope.branchIds), input.filters);
+  const [userNames, customerNames] = await Promise.all([
+    loadDocumentNames("users", allOrders.flatMap((order) => [order.createdBy, order.paidBy, order.releasedBy])),
+    loadDocumentNames("customers", allOrders.map((order) => order.customerId)),
+  ]);
   const completed = completedSaleOrders(allOrders);
   const reversedValueKobo = completed.reduce((sum, order) => sum + positiveInt(order.reversedTotalKobo), 0);
   const grossSalesKobo = completed.reduce((sum, order) => sum + positiveInt(order.subtotalKobo), 0);
@@ -272,15 +331,15 @@ async function salesReport(actor: ActorProfile, input: ReportInput, defaults: "t
     date: iso(order.createdAt),
     branchId: order.branchId,
     branch: scope.branchNames[String(order.branchId)] ?? order.branchId,
-    customer: orderCustomerName(order),
+    customer: orderCustomerName(order, customerNames),
     status: order.status,
     paymentStatus: order.paymentStatus,
     subtotalKobo: positiveInt(order.subtotalKobo),
     discountKobo: positiveInt(order.discountTotalKobo),
     totalKobo: positiveInt(order.grandTotalKobo),
-    createdBy: order.createdBy,
-    paidBy: order.paidBy ?? null,
-    releasedBy: order.releasedBy ?? null,
+    createdBy: resolvedName(userNames, order.createdBy, "Staff member"),
+    paidBy: order.paidBy ? resolvedName(userNames, order.paidBy, "Staff member") : null,
+    releasedBy: order.releasedBy ? resolvedName(userNames, order.releasedBy, "Staff member") : null,
     reversalStatus: order.status === "reversed" || order.status === "partially_reversed" ? order.status : "none",
   }));
   const page = paginate(rows, input.pageSize, input.pageCursor);
@@ -324,6 +383,10 @@ async function paymentReport(actor: ActorProfile, input: ReportInput): Promise<R
     }
     return true;
   });
+  const [userNames, customerNames] = await Promise.all([
+    loadDocumentNames("users", payments.map((payment) => payment.receivedBy)),
+    loadDocumentNames("customers", orders.map((order) => order.customerId)),
+  ]);
   const rows = payments.map((payment) => {
     const order = orderById.get(String(payment.orderId));
     return {
@@ -333,11 +396,11 @@ async function paymentReport(actor: ActorProfile, input: ReportInput): Promise<R
       orderNumber: text(order?.orderNumber, String(payment.orderId)),
       branchId: payment.branchId,
       branch: scope.branchNames[String(payment.branchId)] ?? payment.branchId,
-      customer: order ? orderCustomerName(order) : "",
+      customer: order ? orderCustomerName(order, customerNames) : "Customer not recorded",
       paymentMethod: payment.paymentMethod,
       amountKobo: positiveInt(payment.amountKobo),
       reference: payment.reference ?? null,
-      cashier: payment.receivedBy ?? null,
+      cashier: resolvedName(userNames, payment.receivedBy, "Staff member"),
       status: payment.status ?? "confirmed",
       proofStatus: paymentProofStatus(payment),
     };
@@ -441,6 +504,7 @@ async function stockMovementReport(actor: ActorProfile, input: ReportInput): Pro
     if (typeof input.filters.performedBy === "string" && movement.performedBy !== input.filters.performedBy) return false;
     return true;
   });
+  const userNames = await loadDocumentNames("users", movements.map((movement) => movement.performedBy));
   const rows = movements.map((movement) => ({
     movementId: movement.id,
     date: iso(movement.createdAt),
@@ -457,7 +521,7 @@ async function stockMovementReport(actor: ActorProfile, input: ReportInput): Pro
     orderId: movement.orderId ?? null,
     orderNumber: movement.orderNumber ?? null,
     reason: movement.reason ?? null,
-    performedBy: movement.performedBy ?? null,
+    performedBy: resolvedName(userNames, movement.performedBy, "Staff member"),
     ...(sensitive ? { unitCostKobo: positiveInt(movement.unitCostKobo), inventoryValueImpactKobo: positiveInt(movement.inventoryValueImpactKobo) } : {}),
   }));
   const page = paginate(rows, input.pageSize, input.pageCursor);
@@ -490,6 +554,13 @@ async function reversalReport(actor: ActorProfile, input: ReportInput): Promise<
     if (typeof input.filters.stockReturned === "boolean" && reversal.stockReturned !== input.filters.stockReturned) return false;
     return true;
   });
+  const [userNames, customerNamesByOrder] = await Promise.all([
+    loadDocumentNames(
+      "users",
+      reversals.flatMap((reversal) => [reversal.requestedBy, reversal.approvedBy, reversal.completedBy]),
+    ),
+    loadOrderCustomerNames(reversals.map((reversal) => reversal.orderId)),
+  ]);
   const rows = reversals.map((reversal) => ({
     reversalId: reversal.id,
     reversalNumber: reversal.reversalNumber,
@@ -497,12 +568,12 @@ async function reversalReport(actor: ActorProfile, input: ReportInput): Promise<
     orderNumber: reversal.orderNumber,
     branchId: reversal.branchId,
     branch: scope.branchNames[String(reversal.branchId)] ?? reversal.branchId,
-    customer: reversal.customerName ?? null,
+    customer: customerNamesByOrder[String(reversal.orderId)] ?? "Customer not recorded",
     type: reversal.reversalType,
     status: reversal.status,
-    requestedBy: reversal.requestedBy,
-    approvedBy: reversal.approvedBy ?? null,
-    completedBy: reversal.completedBy ?? null,
+    requestedBy: resolvedName(userNames, reversal.requestedBy, "Staff member"),
+    approvedBy: reversal.approvedBy ? resolvedName(userNames, reversal.approvedBy, "Staff member") : null,
+    completedBy: reversal.completedBy ? resolvedName(userNames, reversal.completedBy, "Staff member") : null,
     refundAmountKobo: positiveInt(reversal.refundAmountKobo),
     creditReductionKobo: positiveInt(reversal.creditReductionKobo),
     stockReturned: reversal.stockReturned === true,
@@ -537,9 +608,10 @@ async function creditReport(actor: ActorProfile, input: ReportInput): Promise<Re
   const transactions = (await queryFinancialTransactions(range, scope.branchIds)).filter((txn) =>
     ["credit_sale", "credit_correction"].includes(text(txn.transactionType)),
   );
+  const customerNames = await loadDocumentNames("customers", transactions.map((txn) => txn.customerId));
   const rows = transactions.map((txn) => ({
     transactionId: txn.id,
-    customerId: txn.customerId ?? null,
+    customer: resolvedName(customerNames, txn.customerId, "Registered customer"),
     branchId: txn.branchId,
     branch: scope.branchNames[String(txn.branchId)] ?? txn.branchId,
     orderId: txn.orderId ?? null,
@@ -584,12 +656,13 @@ async function staffActivityReport(actor: ActorProfile, input: ReportInput): Pro
     if (typeof input.filters.role === "string" && log.actorRole !== input.filters.role) return false;
     return true;
   });
+  const userNames = await loadDocumentNames("users", logs.map((log) => log.actorId));
   const rows = logs.map((log) => ({
     activityId: log.id,
     date: iso(log.createdAt),
     branchId: log.branchId ?? null,
     branch: log.branchId ? scope.branchNames[String(log.branchId)] ?? log.branchId : null,
-    userId: log.actorId,
+    user: resolvedName(userNames, log.actorId, "Staff member"),
     role: log.actorRole,
     action: log.action,
     entityType: log.entityType,
@@ -792,7 +865,7 @@ export async function exportReportAction(actorUid: string | undefined, input: un
   const report = await runReport(actor, data.reportType, { ...data, pageSize: 500 });
   const csv = toCsv(report.rows, {
     generatedAt: report.generatedAt,
-    generatedBy: actor.uid,
+    generatedBy: actor.displayName || "Staff member",
     reportType: data.reportType,
     branchScope: report.branchScope,
     dateRange: `${range.startDate} to ${range.endDate}`,

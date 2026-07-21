@@ -169,7 +169,7 @@ function CustomerNew() {
     setSaving(true);
     setError(null);
     try {
-      const created = await callFunction<Record<string, unknown>, { customerId: string }>(
+      await callFunction<Record<string, unknown>, { customerId: string }>(
         "createCustomer",
         {
           branchId: selectedBranchId,
@@ -179,7 +179,7 @@ function CustomerNew() {
           idempotencyKey: createIdempotencyKey("customer"),
         },
       );
-      setResult(created.customerId);
+      setResult(name.trim());
       setName("");
       setPhone("");
       setAddress("");
@@ -196,7 +196,7 @@ function CustomerNew() {
         <h1 className="text-2xl font-semibold tracking-normal">New customer</h1>
         <Button asChild variant="outline"><Link href="/customers">Back</Link></Button>
       </div>
-      {result ? <OperationState detail={`Customer ${result} created.`} title="Customer saved" /> : null}
+      {result ? <OperationState detail={`${result} was added to the customer list.`} title="Customer saved" /> : null}
       {error ? <OperationState detail={error} title="Action failed" /> : null}
       <div className="grid gap-3 rounded-lg border bg-card p-4">
         <Field label="Name"><input className="h-9 rounded-md border bg-background px-3" onChange={(event) => setName(event.target.value)} value={name} /></Field>
